@@ -1,0 +1,100 @@
+name: App Android (APK)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    env:
+      APP_VERSION_CODE: ${{ github.run_number }}
+      # Password scelta da te, salvata nei "secrets" del repository (Settings → Secrets and variables → Actions).
+      KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Installa Capacitor
+        run: npm ci
+
+      - name: Copia la web app nel progetto Android
+        run: npx cap sync android
+
+      # La chiave di firma resta sempre la stessa: la prima volta viene creata qui, poi salvata
+      # cifrata con la tua password nella release "signing-key" e riusata a ogni compilazione.
+      - name: Prepara la chiave di firma
+        if: env.KEYSTORE_PASSWORD != ''
+        run: |
+          set -euo pipefail
+          KS="$RUNNER_TEMP/menga-dress.jks"
+          if gh release download signing-key -p keystore.enc -D "$RUNNER_TEMP" 2>/dev/null; then
+            openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:KEYSTORE_PASSWORD \
+              -in "$RUNNER_TEMP/keystore.enc" -out "$KS"
+          else
+            keytool -genkeypair -keystore "$KS" -alias mengadress -keyalg RSA -keysize 2048 \
+              -validity 36500 -storepass:env KEYSTORE_PASSWORD -keypass:env KEYSTORE_PASSWORD \
+              -dname "CN=Menga Dress, C=IT"
+            openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass env:KEYSTORE_PASSWORD \
+              -in "$KS" -out "$RUNNER_TEMP/keystore.enc"
+            if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+              gh release create signing-key "$RUNNER_TEMP/keystore.enc" --prerelease \
+                --title "Chiave di firma (cifrata)" \
+                --notes "File tecnico usato dal workflow per firmare l'APK. È cifrato: non serve scaricarlo."
+            fi
+          fi
+          echo "ANDROID_KEYSTORE_FILE=$KS" >> "$GITHUB_ENV"
+          echo "ANDROID_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+
+      - name: Manca la password della chiave
+        if: env.KEYSTORE_PASSWORD == '' && github.ref == 'refs/heads/main'
+        run: |
+          echo "::error::Aggiungi il secret ANDROID_KEYSTORE_PASSWORD in Settings → Secrets and variables → Actions, poi rilancia questo workflow."
+          exit 1
+
+      - name: Compila l'APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          if [ -n "${ANDROID_KEYSTORE_FILE:-}" ]; then
+            ./gradlew assembleRelease --no-daemon
+            cp app/build/outputs/apk/release/app-release.apk ../MengaDress.apk
+          else
+            # Solo per le pull request senza password: APK di prova con firma temporanea.
+            ./gradlew assembleDebug --no-daemon
+            cp app/build/outputs/apk/debug/app-debug.apk ../MengaDress.apk
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MengaDress-apk
+          path: MengaDress.apk
+
+      - name: Pubblica la release da scaricare sul telefono
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: |
+          gh release create "app-v${APP_VERSION_CODE}" MengaDress.apk \
+            --target "${GITHUB_SHA}" \
+            --title "Menga Dress 1.0.${APP_VERSION_CODE}" \
+            --notes "Apri questa pagina dal telefono e tocca MengaDress.apk per scaricare e installare l'app." \
+            --latest

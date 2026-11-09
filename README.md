@@ -17,6 +17,14 @@ Menga Dress è una web app installabile sul telefono, pubblicata con GitHub Page
 2. **Installa l'app**: apri quell'indirizzo con Chrome sul telefono Android, menu ⋮ → **Installa app** (o *Aggiungi a schermata Home*).
 3. **Chiave API**: crea una chiave su [console.anthropic.com](https://console.anthropic.com/settings/keys) (serve una piccola ricarica di credito) e incollala nelle impostazioni dell'app. Resta salvata solo sul telefono.
 
+## App Android
+
+Ogni modifica su `main` crea anche un'app Android vera (APK) con [Capacitor](https://capacitorjs.com), che compare tra le app del telefono.
+
+- **Una volta sola:** in *Settings → Secrets and variables → Actions → New repository secret* crea `ANDROID_KEYSTORE_PASSWORD` con una password a tua scelta. Serve a firmare l'app sempre con la stessa chiave, così gli aggiornamenti si installano sopra senza perdere i dati. La chiave viene creata dal workflow e salvata cifrata nella release `signing-key`.
+- Ultima versione: [MengaDress.apk](https://github.com/mizral86/Dress/releases/latest/download/MengaDress.apk). La prima volta Android chiede di consentire l'installazione da Chrome.
+- I dati dell'app Android sono separati da quelli della versione web: per spostarli usa Backup e Ripristina nelle impostazioni.
+
 ## Costi
 
 Con Claude Sonnet 5.5, circa mezzo centesimo per catalogare un capo e circa un centesimo per ogni proposta di outfit. Hosting e meteo ([Open-Meteo](https://open-meteo.com)) sono gratuiti.

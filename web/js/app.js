@@ -5,6 +5,10 @@ import {
   CATEGORIES, SEASONS, STYLES, PATTERNS, MOODS, OCCASIONS, FORMALITY, describeItem,
 } from './catalog.js';
 
+// true quando gira dentro l'app Android (Capacitor), false nel browser.
+const NATIVE = Boolean(window.Capacitor?.isNativePlatform?.());
+const APK_URL = 'https://github.com/mizral86/Dress/releases/latest/download/MengaDress.apk';
+
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
 
@@ -153,13 +157,21 @@ async function renderWardrobe() {
     view.append(grid);
   }
 
-  const input = h('input', { type: 'file', accept: 'image/*', hidden: true });
-  input.addEventListener('change', async () => {
-    const file = input.files?.[0];
-    input.value = '';
-    if (file) addItemFromFile(file);
-  });
-  view.append(input, h('button', { class: 'fab', type: 'button', 'aria-label': 'Aggiungi capo', onclick: () => input.click() }, '+'));
+  const camera = h('input', { type: 'file', accept: 'image/*', capture: 'environment', hidden: true });
+  const gallery = h('input', { type: 'file', accept: 'image/*', hidden: true });
+  for (const input of [camera, gallery]) {
+    input.addEventListener('change', async () => {
+      const file = input.files?.[0];
+      input.value = '';
+      if (file) addItemFromFile(file);
+    });
+  }
+  const chooseSource = () => openDialog((close) => h('div', { class: 'sheet' },
+    sheetHead('Aggiungi un capo', close),
+    h('div', { class: 'row' },
+      h('button', { class: 'btn primary', type: 'button', onclick: () => { close(); camera.click(); } }, 'Scatta foto'),
+      h('button', { class: 'btn', type: 'button', onclick: () => { close(); gallery.click(); } }, 'Scegli dalla galleria'))));
+  view.append(camera, gallery, h('button', { class: 'fab', type: 'button', 'aria-label': 'Aggiungi capo', onclick: chooseSource }, '+'));
 }
 
 async function addItemFromFile(file) {
@@ -514,9 +526,23 @@ async function openSettings() {
     };
 
     const doExport = async () => {
-      const data = await db.exportBackup();
-      const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
-      const a = h('a', { href: URL.createObjectURL(blob), download: `dress-backup-${new Date().toISOString().slice(0, 10)}.json` });
+      const data = JSON.stringify(await db.exportBackup());
+      const name = `menga-dress-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      if (NATIVE) {
+        // Nell'app Android il download del browser non esiste: salvo il file e apro "Condividi"
+        // così si può mandare a Drive, email o salvare nei file.
+        try {
+          const { uri } = await window.Capacitor.nativePromise('Filesystem', 'writeFile', {
+            path: name, data, directory: 'CACHE', encoding: 'utf8',
+          });
+          await window.Capacitor.nativePromise('Share', 'share', { title: 'Backup Menga Dress', files: [uri] });
+        } catch (e) {
+          if (!/cancel/i.test(e?.message || '')) toast('Backup non riuscito: ' + (e?.message || e));
+        }
+        return;
+      }
+      const blob = new Blob([data], { type: 'application/json' });
+      const a = h('a', { href: URL.createObjectURL(blob), download: name });
       document.body.append(a);
       a.click();
       a.remove();
@@ -550,6 +576,9 @@ async function openSettings() {
         h('button', { class: 'btn', type: 'button', onclick: doExport }, 'Scarica backup'),
         h('button', { class: 'btn', type: 'button', onclick: () => fileIn.click() }, 'Ripristina backup')),
       fileIn,
+      NATIVE ? null : h('h2', {}, 'App Android'),
+      NATIVE ? null : h('p', { class: 'hint' }, 'Puoi installare Menga Dress come app vera, che trovi tra le app del telefono. I dati non passano da soli: fai prima un backup qui e poi ripristinalo nell\'app.'),
+      NATIVE ? null : h('a', { class: 'btn block', href: APK_URL }, 'Scarica l\'app Android'),
     );
   });
 }
@@ -574,6 +603,6 @@ window.addEventListener('hashchange', route);
 route();
 db.askPersistence();
 
-if ('serviceWorker' in navigator) {
+if (!NATIVE && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
 }

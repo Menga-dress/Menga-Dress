@@ -1,0 +1,8 @@
+{
+  "appId": "io.github.mizral86.mengadress",
+  "appName": "Menga Dress",
+  "webDir": "web",
+  "android": {
+    "backgroundColor": "#161412"
+  }
+}

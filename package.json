@@ -1,0 +1,16 @@
+{
+  "name": "menga-dress",
+  "private": true,
+  "description": "Menga Dress: web app e app Android (Capacitor).",
+  "scripts": {
+    "android:setup": "node scripts/android-setup.mjs"
+  },
+  "devDependencies": {
+    "@capacitor/android": "8.6.0",
+    "@capacitor/assets": "4.0.0",
+    "@capacitor/cli": "8.6.0",
+    "@capacitor/core": "8.6.0",
+    "@capacitor/filesystem": "8.1.5",
+    "@capacitor/share": "8.0.3"
+  }
+}
