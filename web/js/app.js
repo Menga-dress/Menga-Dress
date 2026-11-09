@@ -1,8 +1,9 @@
 import * as db from './db.js';
-import { analyzeItem, suggestOutfits, getSettings, hasKey, DEFAULT_MODEL } from './ai.js';
 import { getWeather } from './weather.js';
+import { detectColors } from './colors.js';
+import { suggestOutfits, canSuggest } from './stylist.js';
 import {
-  CATEGORIES, SEASONS, STYLES, PATTERNS, MOODS, OCCASIONS, FORMALITY, describeItem,
+  CATEGORIES, SEASONS, STYLES, PATTERNS, MOODS, OCCASIONS, FORMALITY, SUBTYPES, PALETTE, describeItem,
 } from './catalog.js';
 
 const view = document.getElementById('view');
@@ -153,13 +154,22 @@ async function renderWardrobe() {
     view.append(grid);
   }
 
-  const input = h('input', { type: 'file', accept: 'image/*', hidden: true });
-  input.addEventListener('change', async () => {
-    const file = input.files?.[0];
-    input.value = '';
-    if (file) addItemFromFile(file);
-  });
-  view.append(input, h('button', { class: 'fab', type: 'button', 'aria-label': 'Aggiungi capo', onclick: () => input.click() }, '+'));
+  const camera = h('input', { type: 'file', accept: 'image/*', capture: 'environment', hidden: true });
+  const gallery = h('input', { type: 'file', accept: 'image/*', hidden: true });
+  for (const input of [camera, gallery]) {
+    input.addEventListener('change', async () => {
+      const file = input.files?.[0];
+      input.value = '';
+      if (file) addItemFromFile(file);
+    });
+  }
+  const chooseSource = () => openDialog((close) => h('div', { class: 'sheet' },
+    sheetHead('Aggiungi un capo', close),
+    h('p', { class: 'hint' }, 'Consiglio: fotografa il capo steso o appeso, su uno sfondo chiaro e uniforme.'),
+    h('div', { class: 'row' },
+      h('button', { class: 'btn primary', type: 'button', onclick: () => { close(); camera.click(); } }, 'Scatta foto'),
+      h('button', { class: 'btn', type: 'button', onclick: () => { close(); gallery.click(); } }, 'Scegli dalla galleria'))));
+  view.append(camera, gallery, h('button', { class: 'fab', type: 'button', 'aria-label': 'Aggiungi capo', onclick: chooseSource }, '+'));
 }
 
 async function addItemFromFile(file) {
@@ -188,7 +198,6 @@ function editItem(item, { isNew = false } = {}) {
     const preview = h('img', { class: 'preview', src: URL.createObjectURL(item.image), alt: 'Foto del capo' });
 
     const f = {
-      category: select(CATEGORIES, item.category, { empty: 'Scegli…' }),
       subcategory: h('input', { type: 'text', value: item.subcategory, placeholder: 'es. Camicia oxford' }),
       colors: h('input', { type: 'text', value: (item.colors || []).join(', '), placeholder: 'es. blu, bianco' }),
       pattern: select(PATTERNS, item.pattern),
@@ -198,49 +207,75 @@ function editItem(item, { isNew = false } = {}) {
       size: h('input', { type: 'text', value: item.size || '', placeholder: 'es. M, 42' }),
       notes: h('textarea', {}, item.notes || ''),
     };
+    let category = item.category;
     let seasons = chipGroup(SEASONS, item.seasons, { multiple: true });
     let styles = chipGroup(STYLES, item.styles, { multiple: true });
     const seasonsSlot = h('div', {}, seasons);
     const stylesSlot = h('div', {}, styles);
+    const typesSlot = h('div');
 
-    const applyAI = (r) => {
-      f.category.value = r.category;
-      f.subcategory.value = r.subcategory;
-      f.colors.value = r.colors.join(', ');
-      f.pattern.value = r.pattern;
-      f.material.value = r.material;
-      f.formality.value = String(r.formality);
-      if (!f.notes.value) f.notes.value = r.description;
-      seasons = chipGroup(SEASONS, r.seasons, { multiple: true });
-      styles = chipGroup(STYLES, r.styles, { multiple: true });
+    // Scegliendo il tipo (es. "Felpa") compilo formalità, stagioni e stili: si possono cambiare.
+    const applyType = (tp) => {
+      f.subcategory.value = tp.name;
+      f.formality.value = String(tp.formality);
+      seasons = chipGroup(SEASONS, tp.seasons, { multiple: true });
+      styles = chipGroup(STYLES, tp.styles, { multiple: true });
       seasonsSlot.replaceChildren(seasons);
       stylesSlot.replaceChildren(styles);
     };
+    const paintTypes = () => {
+      const list = SUBTYPES[category] || [];
+      if (!list.length) { typesSlot.replaceChildren(); return; }
+      const opts = Object.fromEntries(list.map((tp) => [tp.name, tp.name]));
+      typesSlot.replaceChildren(h('div', { class: 'field' }, h('span', {}, 'Tipo'),
+        chipGroup(opts, f.subcategory.value, { onChange: (v) => applyType(list.find((tp) => tp.name === v)) })));
+    };
+    const categoryChips = chipGroup(CATEGORIES, category, {
+      onChange: (v) => { category = v; f.subcategory.value = ''; paintTypes(); },
+    });
+    paintTypes();
 
-    const runAI = async () => {
-      if (!(await hasKey())) {
-        status.replaceChildren(h('p', { class: 'hint' }, 'Aggiungi la chiave API nelle impostazioni per far compilare i campi all\'AI. Intanto puoi compilarli a mano.'));
-        return;
-      }
-      status.replaceChildren(h('div', { class: 'status' }, h('span', { class: 'spinner' }), 'L\'AI sta riconoscendo il capo…'));
+    const colorChips = h('div', { class: 'chips' });
+    const paintColorChips = () => {
+      const current = f.colors.value.split(',').map((x) => x.trim()).filter(Boolean);
+      colorChips.replaceChildren(...Object.keys(PALETTE).map((name) => {
+        const [r, g, b] = PALETTE[name];
+        const on = current.includes(name);
+        return h('button', {
+          type: 'button', class: 'chip', 'aria-pressed': String(on),
+          onclick: () => {
+            const now = f.colors.value.split(',').map((x) => x.trim()).filter(Boolean);
+            const next = now.includes(name) ? now.filter((c) => c !== name) : [...now, name];
+            f.colors.value = next.join(', ');
+            paintColorChips();
+          },
+        }, h('span', { class: 'swatch', style: `background: rgb(${r},${g},${b})` }), name);
+      }));
+    };
+    f.colors.addEventListener('input', paintColorChips);
+    paintColorChips();
+
+    const runColors = async () => {
+      status.replaceChildren(h('div', { class: 'status' }, h('span', { class: 'spinner' }), 'Riconosco i colori…'));
       try {
-        const r = await analyzeItem(item.image);
-        if (!r.is_clothing) {
-          status.replaceChildren(h('p', { class: 'error' }, 'Non vedo un capo in questa foto. Puoi comunque compilare i campi a mano.'));
-          return;
+        const found = await detectColors(item.image);
+        if (found.length) {
+          f.colors.value = found.join(', ');
+          paintColorChips();
+          status.replaceChildren(h('p', { class: 'hint' }, `Colori riconosciuti: ${found.join(', ')}. Ora scegli categoria e tipo.`));
+        } else {
+          status.replaceChildren(h('p', { class: 'hint' }, 'Scegli categoria, tipo e colori.'));
         }
-        applyAI(r);
-        status.replaceChildren(h('p', { class: 'hint' }, 'Campi compilati dall\'AI: controllali e salva.'));
-      } catch (e) {
-        status.replaceChildren(h('p', { class: 'error' }, e.message));
+      } catch {
+        status.replaceChildren(h('p', { class: 'hint' }, 'Scegli categoria, tipo e colori.'));
       }
     };
 
     const save = async () => {
-      if (!f.category.value) { toast('Scegli una categoria.'); f.category.focus(); return; }
+      if (!category) { toast('Scegli una categoria.'); return; }
       const updated = {
         ...item,
-        category: f.category.value,
+        category,
         subcategory: f.subcategory.value.trim(),
         colors: f.colors.value.split(',').map((s) => s.trim()).filter(Boolean),
         pattern: f.pattern.value,
@@ -273,9 +308,10 @@ function editItem(item, { isNew = false } = {}) {
       status,
       isNew ? null : h('p', { class: 'stat' },
         item.timesWorn ? `Indossato ${item.timesWorn} ${item.timesWorn === 1 ? 'volta' : 'volte'}, l'ultima il ${new Date(item.lastWorn).toLocaleDateString('it-IT')}` : 'Mai indossato finora'),
-      field('Categoria', f.category),
-      field('Tipo', f.subcategory),
-      field('Colori', f.colors),
+      h('div', { class: 'field' }, h('span', {}, 'Categoria'), categoryChips),
+      typesSlot,
+      field('Nome del capo', f.subcategory),
+      h('div', { class: 'field' }, h('span', {}, 'Colori'), colorChips, f.colors),
       h('div', { class: 'two' }, field('Fantasia', f.pattern), field('Materiale', f.material)),
       field('Formalità', f.formality),
       h('div', { class: 'field' }, h('span', {}, 'Stagioni'), seasonsSlot),
@@ -284,27 +320,27 @@ function editItem(item, { isNew = false } = {}) {
       field('Note', f.notes),
       h('div', { class: 'row end' },
         isNew ? null : h('button', { class: 'btn danger', type: 'button', onclick: del }, 'Elimina'),
-        isNew ? null : h('button', { class: 'btn', type: 'button', onclick: runAI }, 'Rianalizza con AI'),
+        isNew ? null : h('button', { class: 'btn', type: 'button', onclick: runColors }, 'Riconosci colori'),
         h('button', { class: 'btn primary', type: 'button', onclick: save }, 'Salva')),
     ].filter(Boolean));
-    if (isNew) setTimeout(runAI, 0);
+    if (isNew) setTimeout(runColors, 0);
     return wrap;
   });
 }
 
 // ---------- Outfit del giorno ----------
 
-const outfitState = { mood: 'rilassato', occasion: 'tempo_libero', weather: null, weatherError: null, results: null, extra: '' };
+const outfitState = { mood: 'rilassato', occasion: 'tempo_libero', weather: null, weatherError: null, results: null };
 
 async function renderOutfit() {
   titleEl.textContent = 'Outfit del giorno';
   view.replaceChildren();
   const items = await db.getAll('items');
 
-  if (items.length < 3) {
+  if (!canSuggest(items)) {
     view.append(h('div', { class: 'empty' },
-      h('strong', {}, 'Servono almeno 3 capi'),
-      'Aggiungi qualche capo nell\'Armadio e poi torna qui per le proposte di outfit.',
+      h('strong', {}, 'Servono ancora un po\' di capi'),
+      'Aggiungi almeno una parte sopra e una sotto (o un abito) nell\'Armadio. Con scarpe e giacche le proposte saranno complete.',
       h('div', { class: 'spacer' }),
       h('a', { class: 'btn primary', href: '#/armadio' }, 'Vai all\'Armadio')));
     return;
@@ -335,23 +371,21 @@ async function renderOutfit() {
   paintWeather();
   if (!outfitState.weather) loadWeather();
 
-  const extra = h('input', { type: 'text', value: outfitState.extra, placeholder: 'es. voglio usare la giacca verde' });
-  extra.addEventListener('input', () => { outfitState.extra = extra.value; });
-
   const resultsBox = h('div');
   const go = h('button', { class: 'btn primary block', type: 'button' }, 'Proponimi 3 outfit');
   go.addEventListener('click', async () => {
     go.disabled = true;
-    resultsBox.replaceChildren(h('div', { class: 'status' }, h('span', { class: 'spinner' }), 'Sto abbinando i tuoi capi…'));
     try {
       const [profile, history] = await Promise.all([db.getKV('profile'), db.getAll('outfits')]);
       history.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-      outfitState.results = await suggestOutfits({
+      outfitState.results = suggestOutfits({
         items, profile, history,
         mood: outfitState.mood, occasion: outfitState.occasion,
-        weather: outfitState.weather, extra: outfitState.extra.trim(),
+        weather: outfitState.weather,
       });
       paintResults(resultsBox, items);
+      go.textContent = 'Altre proposte';
+      resultsBox.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (e) {
       resultsBox.replaceChildren(h('p', { class: 'error' }, e.message));
     } finally {
@@ -365,16 +399,14 @@ async function renderOutfit() {
     chipGroup(MOODS, outfitState.mood, { onChange: (v) => { outfitState.mood = v; } }),
     h('h2', {}, 'Per cosa ti vesti?'),
     chipGroup(OCCASIONS, outfitState.occasion, { onChange: (v) => { outfitState.occasion = v; } }),
-    field('Qualcosa in più? (facoltativo)', extra),
     go,
     h('div', { class: 'spacer' }),
     resultsBox,
   );
 
-  if (!(await hasKey())) {
-    resultsBox.replaceChildren(h('p', { class: 'hint' }, 'Per le proposte serve la chiave API: aggiungila nelle impostazioni (icona in alto a destra).'));
-  } else if (outfitState.results) {
+  if (outfitState.results) {
     paintResults(resultsBox, items);
+    go.textContent = 'Altre proposte';
   }
 }
 
@@ -489,7 +521,7 @@ async function renderProfile() {
     field('Colori che ami', f.likedColors),
     field('Colori da evitare', f.avoidColors),
     field('Budget per capo', f.budget),
-    field('Altre note per lo stylist', f.notes),
+    field('Note', f.notes),
     h('button', { class: 'btn primary block', type: 'button', onclick: save }, 'Salva profilo'),
   );
 }
@@ -497,26 +529,13 @@ async function renderProfile() {
 // ---------- Impostazioni ----------
 
 async function openSettings() {
-  const s = await getSettings();
   openDialog((close) => {
-    const key = h('input', { type: 'password', value: s.apiKey || '', placeholder: 'sk-ant-…', autocomplete: 'off' });
-    const model = select({
-      'claude-sonnet-5-5': 'Claude Sonnet 5.5 (consigliato)',
-      'claude-haiku-5-5': 'Claude Haiku 5.5 (più economico)',
-    }, s.model || DEFAULT_MODEL);
     const fileIn = h('input', { type: 'file', accept: 'application/json,.json', hidden: true });
-
-    const save = async () => {
-      await db.setKV('settings', { ...s, apiKey: key.value.trim(), model: model.value });
-      close();
-      toast('Impostazioni salvate');
-      route();
-    };
 
     const doExport = async () => {
       const data = await db.exportBackup();
       const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
-      const a = h('a', { href: URL.createObjectURL(blob), download: `dress-backup-${new Date().toISOString().slice(0, 10)}.json` });
+      const a = h('a', { href: URL.createObjectURL(blob), download: `menga-dress-backup-${new Date().toISOString().slice(0, 10)}.json` });
       document.body.append(a);
       a.click();
       a.remove();
@@ -539,11 +558,7 @@ async function openSettings() {
 
     return h('div', { class: 'sheet' },
       sheetHead('Impostazioni', close),
-      h('h2', {}, 'AI'),
-      h('p', { class: 'hint', html: 'Crea una chiave su <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a> e incollala qui. Resta salvata solo su questo telefono.' }),
-      field('Chiave API Anthropic', key),
-      field('Modello', model),
-      h('button', { class: 'btn primary block', type: 'button', onclick: save }, 'Salva'),
+      h('p', { class: 'hint' }, 'Menga Dress è gratuita: funziona tutta sul telefono, senza account né chiavi.'),
       h('h2', {}, 'Backup'),
       h('p', { class: 'hint' }, 'Armadio, outfit e profilo sono salvati solo su questo telefono. Scarica un backup ogni tanto per non perderli.'),
       h('div', { class: 'row' },
