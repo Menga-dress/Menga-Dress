@@ -7,7 +7,7 @@ Il mio armadio digitale: fotografo i capi e ogni giorno l'app mi propone cosa in
 ## Sezioni
 
 - **Armadio**: aggiungi un capo con una foto (scatto o galleria). L'app riconosce da sola i colori; tu scegli categoria e tipo con un tocco, e formalità, stagioni e stili si compilano di conseguenza. Tutto si può correggere.
-- **Outfit**: scegli umore e occasione, l'app legge il meteo e propone 3 outfit fatti con i tuoi capi, con la spiegazione dell'abbinamento. "Altre proposte" ne genera di nuove; 👍/👎 e "Lo indosso oggi" migliorano le proposte successive.
+- **Outfit**: scegli umore e occasione, l'app legge il meteo e propone 3 outfit fatti con i tuoi capi, con la spiegazione dell'abbinamento. Se ti manca qualcosa (o l'armadio è vuoto) propone lei il capo da prendere, con un link per cercarlo online nella tua taglia. "Altre proposte" ne genera di nuove; 👍/👎 e "Lo indosso oggi" migliorano le proposte successive.
 - **Profilo**: misure, taglie (anche per marca), stili e colori preferiti o da evitare, budget.
 - **Impostazioni** (icona in alto): backup e ripristino.
 

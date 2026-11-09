@@ -1,5 +1,5 @@
 // Stylist interno: compone gli outfit con regole di stile, senza AI esterne né costi.
-import { NEUTRALS, findSubtype } from './catalog.js';
+import { NEUTRALS, SUBTYPES, findSubtype } from './catalog.js';
 
 // Formalità ideale per occasione (1 molto casual … 5 molto elegante).
 const OCCASION_FORMALITY = {
@@ -30,6 +30,60 @@ function currentSeason(weather) {
   if (m <= 7) return 'summer';
   return 'autumn';
 }
+
+// Capi "idea": quando nell'armadio manca qualcosa, lo stylist propone un capo da aggiungere.
+const IDEA_COLORS = {
+  top: ['bianco', 'azzurro', 'blu navy', 'grigio chiaro', 'nero', 'verde oliva', 'bordeaux', 'rosa'],
+  bottom: ['blu navy', 'beige', 'grigio', 'nero'],
+  dress: ['nero', 'blu navy', 'verde oliva', 'bordeaux'],
+  outerwear: ['blu navy', 'beige', 'nero', 'grigio'],
+  shoes: ['bianco', 'marrone', 'nero'],
+};
+const IDEA_COLOR_BY_TYPE = {
+  Jeans: ['denim', 'nero'], 'Giacca di jeans': ['denim'], Trench: ['beige'], Piumino: ['nero', 'blu navy'],
+  'Scarpe da corsa': ['grigio', 'nero'], Sneakers: ['bianco'], Stivaletti: ['marrone', 'nero'],
+  Mocassini: ['marrone', 'nero'], 'Scarpe eleganti': ['nero', 'marrone'], Sandali: ['marrone'], Décolleté: ['nero', 'beige'], Leggings: ['nero'], 'Pantaloni sportivi': ['nero', 'grigio'],
+  'Maglia sportiva': ['nero', 'blu'], 'Abito elegante': ['nero', 'blu navy'], Completo: ['blu navy', 'grigio'],
+};
+const WOMEN_ONLY = new Set(['Camicetta', 'Top', 'Gonna', 'Leggings', 'Vestito', 'Abito elegante', 'Décolleté']);
+
+function ideaItems(gender) {
+  const out = [];
+  for (const cat of Object.keys(IDEA_COLORS)) {
+    for (const sub of SUBTYPES[cat]) {
+      if (gender !== 'donna' && WOMEN_ONLY.has(sub.name)) continue;
+      if (cat === 'dress' && sub.name === 'Tuta') continue;
+      for (const c of IDEA_COLOR_BY_TYPE[sub.name] || IDEA_COLORS[cat]) {
+        out.push({
+          id: `idea:${cat}:${sub.name}:${c}`, idea: true, category: cat, subcategory: sub.name,
+          colors: [c], formality: sub.formality, seasons: sub.seasons, styles: sub.styles, pattern: 'solid',
+          timesWorn: 1,
+        });
+      }
+    }
+  }
+  return out;
+}
+
+// Nome dell'idea in italiano corretto: "camicia bianca", "pantaloni neri".
+const FEM = new Set(['Camicia', 'Camicia elegante', 'Camicetta', 'Felpa', 'Maglia sportiva', 'Gonna', 'Tuta', 'Giacca di jeans', 'T-shirt', 'Polo']);
+const PLURAL_M = new Set(['Jeans', 'Chino', 'Pantaloni eleganti', 'Pantaloni sportivi', 'Bermuda', 'Leggings', 'Mocassini', 'Stivaletti', 'Sandali']);
+const PLURAL_F = new Set(['Scarpe da corsa', 'Scarpe eleganti', 'Sneakers', 'Décolleté']);
+export function ideaName(it) {
+  const n = it.subcategory;
+  const g = FEM.has(n) ? 'a' : PLURAL_M.has(n) ? 'i' : PLURAL_F.has(n) ? 'e' : 'o';
+  const words = (it.colors?.[0] || '').split(' ').map((w, i) => {
+    if (i > 0) return w;
+    if (w === 'bianco') return { o: 'bianco', a: 'bianca', i: 'bianchi', e: 'bianche' }[g];
+    if (w === 'grigio') return { o: 'grigio', a: 'grigia', i: 'grigi', e: 'grigie' }[g];
+    if (/^(nero|rosso|giallo|azzurro)$/.test(w)) return w.slice(0, -1) + g;
+    if (/^(marrone|verde|arancione)$/.test(w) && (g === 'i' || g === 'e')) return w.slice(0, -1) + 'i';
+    return w;
+  });
+  return `${n.toLowerCase()} ${words.join(' ')}`.trim();
+}
+
+const RAIN_COATS = new Set(['Trench', 'Impermeabile', 'Piumino', 'Cappotto']);
 
 const warmthOf = (it) => findSubtype(it.category, it.subcategory)?.warmth ?? 2;
 const isNeutral = (c) => NEUTRALS.has(c);
@@ -62,6 +116,8 @@ function scoreItem(it, ctx) {
   if (ctx.weather) {
     if (ctx.weather.max >= 25 && w === 3) s -= 3;
     if (ctx.weather.max <= 10 && w === 1 && it.category !== 'top') s -= 1.5;
+    if (ctx.weather.rain >= 50 && it.category === 'outerwear') s += RAIN_COATS.has(it.subcategory) ? 2 : -1.5;
+    if (ctx.weather.rain >= 50 && it.subcategory === 'Sandali') s -= 3;
   }
   return s;
 }
@@ -94,11 +150,12 @@ function explain(pieces, ctx, extras) {
   const occ = { lavoro: 'il lavoro', tempo_libero: 'il tempo libero', serata: 'la serata', sport: 'lo sport', evento: 'un evento', viaggio: 'il viaggio' }[ctx.occasion] || 'oggi';
   const [lo, hi] = ctx.formality;
   const fits = pieces.every((x) => (x.formality || 3) >= lo - 0.5 && (x.formality || 3) <= hi + 0.5);
-  parts.push(fits ? `Livello di eleganza giusto per ${occ}` : `La scelta più adatta per ${occ} tra i tuoi capi`);
+  const allIdeas = pieces.every((x) => x.idea);
+  parts.push(fits || allIdeas ? `Livello di eleganza giusto per ${occ}` : `La scelta più adatta per ${occ} tra i tuoi capi`);
   const colors = pieces.flatMap((p) => (p.colors || []).slice(0, 1));
   const bright = [...new Set(colors.filter((c) => !isNeutral(c)))];
   if (!bright.length) parts.push('colori neutri che stanno bene insieme');
-  else if (bright.length === 1) parts.push(`il ${bright[0]} come unico colore protagonista`);
+  else if (bright.length === 1) parts.push(`${/^[aeiou]/.test(bright[0]) ? "l'" : 'il '}${bright[0]} come unico colore protagonista`);
   else parts.push(`un abbinamento vivace (${bright.join(' e ')})`);
   if (extras.outer) parts.push(`${extras.outer.subcategory?.toLowerCase() || 'giacca'} perché ${ctx.weather?.rain >= 50 ? 'è prevista pioggia' : 'fa fresco'}`);
   const mood = { energico: 'energico', rilassato: 'rilassato', elegante: 'elegante', creativo: 'creativo', comodo: 'in vena di comodità', sicuro: 'sicuro di te' }[ctx.moodKey] || 'bene';
@@ -113,7 +170,12 @@ function titleFor(pieces, ctx) {
 }
 
 export function suggestOutfits({ items, profile, history, mood, occasion, weather, count = 3, seed = Math.random() }) {
-  const by = (cat) => items.filter((i) => i.category === cat);
+  // Ai tuoi capi si aggiungono le idee: se in una categoria hai già qualcosa, l'idea
+  // parte svantaggiata e vince solo se i tuoi capi non vanno proprio bene.
+  const ideas = ideaItems(profile?.gender);
+  const owned = (cat) => items.filter((i) => i.category === cat);
+  const by = (cat) => [...owned(cat), ...ideas.filter((i) => i.category === cat)];
+  const ideaPenalty = (it) => (it.idea ? (owned(it.category).length ? 6 : 0) : 0);
   const moodPrefs = MOOD_PREFS[mood] || MOOD_PREFS.rilassato;
   let formality = [...(OCCASION_FORMALITY[occasion] || [1, 3])];
   if (moodPrefs.formality) formality = formality.map((v) => Math.min(5, Math.max(1, v + moodPrefs.formality)));
@@ -130,8 +192,11 @@ export function suggestOutfits({ items, profile, history, mood, occasion, weathe
   // Un pizzico di casualità così "Altre proposte" dà risultati diversi.
   let r = Math.floor(seed * 2 ** 31) || 1;
   const rand = () => { r = (r * 48271) % 2147483647; return r / 2147483647; };
-  const ranked = (list) => list.map((it) => ({ it, s: scoreItem(it, ctx) + rand() * 1.5 }))
-    .sort((a, b) => b.s - a.s).slice(0, 8);
+  const ranked = (list) => list.map((it) => ({ it, s: scoreItem(it, ctx) - ideaPenalty(it) + rand() * 1.5 }))
+    .sort((a, b) => b.s - a.s)
+    // Poche idee per categoria, così restano varie.
+    .filter((x, i, arr) => !x.it.idea || arr.slice(0, i).filter((y) => y.it.idea).length < 4)
+    .slice(0, 8);
 
   const tops = ranked(by('top'));
   const bottoms = ranked(by('bottom'));
@@ -143,17 +208,19 @@ export function suggestOutfits({ items, profile, history, mood, occasion, weathe
   const bases = [];
   for (const t of tops) for (const b of bottoms) bases.push({ pieces: [t.it, b.it], s: t.s + b.s });
   for (const d of dresses) bases.push({ pieces: [d.it], s: d.s * 2 });
+  // Anche tutto da comprare va bene, ma il tuo armadio ha la precedenza.
+  for (const b of bases) if (b.pieces.every((p) => p.idea) && items.length) b.s -= 4;
 
   const candidates = bases.map((base) => {
     const pieces = [...base.pieces];
     let s = base.s;
     const extras = {};
-    if (needOuter && outers.length) {
+    if (needOuter) {
       const o = outers.map((x) => ({ x, v: x.s + harmony([...pieces, x.it], ctx) })).sort((a, b) => b.v - a.v)[0];
       if (weather?.max <= 10 && warmthOf(o.x.it) < 3) s -= 1;
       pieces.push(o.x.it); s += o.x.s; extras.outer = o.x.it;
     }
-    if (shoes.length) {
+    {
       const sh = shoes.map((x) => ({ x, v: x.s + harmony([...pieces, x.it], ctx) })).sort((a, b) => b.v - a.v)[0];
       pieces.push(sh.x.it); s += sh.x.s;
     }
@@ -166,6 +233,8 @@ export function suggestOutfits({ items, profile, history, mood, occasion, weathe
   const used = new Set();
   for (const c of candidates) {
     const key = c.pieces.filter((p) => ['top', 'bottom', 'dress'].includes(p.category)).map((p) => p.id);
+    const sig = c.pieces.map((p) => p.id).join('|');
+    if (chosen.some((x) => x.pieces.map((p) => p.id).join('|') === sig)) continue;
     if (key.some((id) => used.has(id)) && candidates.length > count * 2) continue;
     chosen.push(c);
     key.forEach((id) => used.add(id));
@@ -178,22 +247,13 @@ export function suggestOutfits({ items, profile, history, mood, occasion, weathe
     }
   }
 
-  return chosen.map((c) => {
-    const missing = [];
-    if (!shoes.length) missing.push('un paio di scarpe');
-    if (needOuter && !outers.length) missing.push(weather?.rain >= 50 ? 'una giacca impermeabile' : 'una giacca');
-    return {
-      title: titleFor(c.pieces, ctx),
-      item_ids: c.pieces.map((p) => p.id),
-      reason: explain(c.pieces, ctx, c.extras),
-      missing: missing.length ? `aggiungi all'armadio ${missing.join(' e ')}` : '',
-    };
-  });
-}
-
-export function canSuggest(items) {
-  const has = (c) => items.some((i) => i.category === c);
-  return (has('top') && has('bottom')) || has('dress');
+  return chosen.map((c) => ({
+    title: titleFor(c.pieces, ctx),
+    item_ids: c.pieces.map((p) => p.id),
+    pieces: c.pieces,
+    reason: explain(c.pieces, ctx, c.extras),
+    ideas: c.pieces.filter((p) => p.idea),
+  }));
 }
 
 export { SEASON_LABEL };
