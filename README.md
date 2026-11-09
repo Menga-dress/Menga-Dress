@@ -1,30 +1,37 @@
 # Menga Dress
 
-Il mio armadio digitale: fotografo i capi, l'AI li cataloga e ogni giorno mi propone cosa indossare in base a umore, occasione e meteo.
+Il mio armadio digitale: fotografo i capi e ogni giorno l'app mi propone cosa indossare in base a umore, occasione e meteo.
 
-Menga Dress è una web app installabile sul telefono, pubblicata con GitHub Pages. Non serve nessun server: armadio, outfit e profilo restano salvati sul telefono.
+È una web app gratuita, installabile sul telefono e pubblicata con GitHub Pages. Non servono account, chiavi o abbonamenti: tutto funziona sul telefono e i dati restano lì.
 
 ## Sezioni
 
-- **Armadio**: aggiungi un capo con una foto; Claude riconosce categoria, colori, materiale, stagioni, formalità e stili. Puoi correggere tutto e filtrare per categoria.
-- **Outfit**: scegli umore e occasione, l'app legge il meteo e propone 3 outfit fatti con i tuoi capi. Metti 👍/👎 e segna cosa indossi: i voti migliorano le proposte successive.
-- **Profilo**: misure, taglie (anche per marca), stili e colori preferiti, budget.
-- **Impostazioni** (icona in alto): chiave API, modello, backup e ripristino.
+- **Armadio**: aggiungi un capo con una foto (scatto o galleria). L'app riconosce da sola i colori; tu scegli categoria e tipo con un tocco, e formalità, stagioni e stili si compilano di conseguenza. Tutto si può correggere.
+- **Outfit**: scegli umore e occasione, l'app legge il meteo e propone 3 outfit fatti con i tuoi capi, con la spiegazione dell'abbinamento. "Altre proposte" ne genera di nuove; 👍/👎 e "Lo indosso oggi" migliorano le proposte successive.
+- **Profilo**: misure, taglie (anche per marca), stili e colori preferiti o da evitare, budget.
+- **Impostazioni** (icona in alto): backup e ripristino.
+
+## Come funzionano i consigli
+
+Lo stylist è in `web/js/stylist.js` e usa regole di stile, senza servizi esterni:
+
+- formalità adatta all'occasione (es. lavoro 3–4, sport 1);
+- stili e colori che seguono l'umore e il profilo;
+- armonia dei colori: neutri con al massimo un colore protagonista, mai due fantasie insieme;
+- capi adatti alla stagione e al meteo, giacca se fa fresco o piove;
+- capi indossati negli ultimi giorni lasciati a riposo, abbinamenti votati 👍 favoriti e 👎 evitati.
+
+I colori della foto sono riconosciuti in `web/js/colors.js` analizzando la parte centrale dell'immagine.
 
 ## Primo avvio
 
-1. **Attiva GitHub Pages** (una volta sola): nel repository vai su *Settings → Pages* e in *Source* scegli **GitHub Actions**. Ogni modifica su `main` viene pubblicata in automatico su `https://mizral86.github.io/Dress/`.
-2. **Installa l'app**: apri quell'indirizzo con Chrome sul telefono Android, menu ⋮ → **Installa app** (o *Aggiungi a schermata Home*).
-3. **Chiave API**: crea una chiave su [console.anthropic.com](https://console.anthropic.com/settings/keys) (serve una piccola ricarica di credito) e incollala nelle impostazioni dell'app. Resta salvata solo sul telefono.
-
-## Costi
-
-Con Claude Sonnet 5.5, circa mezzo centesimo per catalogare un capo e circa un centesimo per ogni proposta di outfit. Hosting e meteo ([Open-Meteo](https://open-meteo.com)) sono gratuiti.
+1. GitHub Pages pubblica `web/` a ogni modifica su `main`: `https://mizral86.github.io/Dress/`.
+2. Sul telefono apri l'indirizzo con Chrome. Su Xiaomi conviene **⋮ → Aggiungi a schermata Home → Crea scorciatoia**.
 
 ## Note tecniche
 
 - HTML, CSS e JavaScript senza passaggi di build, nella cartella `web/`.
 - Dati in IndexedDB sul dispositivo; il backup scarica un file JSON con anche le foto.
-- Le chiamate a Claude partono direttamente dal browser con la chiave dell'utente. Va bene per uso personale; se l'app verrà pubblicata per altri servirà un piccolo server che custodisca la chiave.
+- Meteo da [Open-Meteo](https://open-meteo.com), gratuito e senza chiave.
 
 Per provarla in locale: `cd web && python3 -m http.server 8000` e apri `http://localhost:8000`.

@@ -148,7 +148,7 @@ textarea { min-height: 72px; resize: vertical; }
 
 .outfit h3 { margin: 0 0 4px; font-size: 17px; }
 .outfit p { margin: 0 0 12px; color: var(--muted); font-size: 14px; }
-.outfit .pieces { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 8px; margin-bottom: 12px; }
+.outfit .pieces { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 12px; }
 .outfit .pieces img { width: 100%; aspect-ratio: 3/4; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); }
 .outfit .pieces figcaption { font-size: 11px; color: var(--muted); margin-top: 2px; }
 .outfit .pieces figure { margin: 0; }
@@ -174,3 +174,5 @@ dialog .sheet-head h2 { margin: 0; }
 #toast.show { opacity: 1; }
 
 .stat { font-size: 13px; color: var(--muted); }
+
+.swatch { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; border: 1px solid rgba(127,127,127,.5); }
