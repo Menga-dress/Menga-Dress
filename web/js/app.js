@@ -1,7 +1,7 @@
 import * as db from './db.js';
 import { getWeather } from './weather.js';
 import { detectColors } from './colors.js';
-import { suggestOutfits, canSuggest } from './stylist.js';
+import { suggestOutfits, ideaName } from './stylist.js';
 import {
   CATEGORIES, SEASONS, STYLES, PATTERNS, MOODS, OCCASIONS, FORMALITY, SUBTYPES, PALETTE, describeItem,
 } from './catalog.js';
@@ -337,14 +337,7 @@ async function renderOutfit() {
   view.replaceChildren();
   const items = await db.getAll('items');
 
-  if (!canSuggest(items)) {
-    view.append(h('div', { class: 'empty' },
-      h('strong', {}, 'Servono ancora un po\' di capi'),
-      'Aggiungi almeno una parte sopra e una sotto (o un abito) nell\'Armadio. Con scarpe e giacche le proposte saranno complete.',
-      h('div', { class: 'spacer' }),
-      h('a', { class: 'btn primary', href: '#/armadio' }, 'Vai all\'Armadio')));
-    return;
-  }
+  const fewItems = items.length < 4;
 
   const weatherBox = h('div', { class: 'card weather' });
   const paintWeather = () => {
@@ -383,6 +376,7 @@ async function renderOutfit() {
         mood: outfitState.mood, occasion: outfitState.occasion,
         weather: outfitState.weather,
       });
+      outfitState.profile = profile;
       paintResults(resultsBox, items);
       go.textContent = 'Altre proposte';
       resultsBox.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -395,6 +389,9 @@ async function renderOutfit() {
 
   view.append(
     weatherBox,
+    fewItems ? h('p', { class: 'hint' }, items.length
+      ? 'Hai ancora pochi capi: dove manca qualcosa ti propongo io cosa prendere.'
+      : 'L\'armadio è vuoto: intanto ti propongo outfit completi con capi da prendere. Più capi aggiungi, più le proposte useranno i tuoi.') : null,
     h('h2', {}, 'Come ti senti oggi?'),
     chipGroup(MOODS, outfitState.mood, { onChange: (v) => { outfitState.mood = v; } }),
     h('h2', {}, 'Per cosa ti vesti?'),
@@ -461,13 +458,32 @@ function paintResults(box, items) {
     box.append(h('div', { class: 'card outfit' },
       h('h3', {}, o.title),
       h('p', {}, o.reason),
-      h('div', { class: 'pieces' }, o.item_ids.map((id) => {
-        const it = byId[id];
+      h('div', { class: 'pieces' }, o.pieces.map((p) => {
+        const it = byId[p.id] || p;
+        if (it.idea) {
+          const rgb = PALETTE[it.colors[0]] || [200, 200, 200];
+          const light = rgb[0] * 0.3 + rgb[1] * 0.59 + rgb[2] * 0.11 > 150;
+          return h('figure', {}, h('div', { class: 'idea-tile', style: `background:rgb(${rgb.join(',')});color:${light ? '#1f1d1a' : '#fff'}` },
+            h('span', {}, it.subcategory), h('small', {}, it.colors[0])), h('figcaption', {}, 'Da prendere'));
+        }
         return h('figure', {}, h('img', { src: imgURL(it), alt: describeItem(it) }), h('figcaption', {}, it.subcategory || CATEGORIES[it.category]));
       })),
-      o.missing ? h('p', { class: 'missing' }, `Per completarlo: ${o.missing}`) : null,
-      h('div', { class: 'row' }, up, down, h('span', { style: 'flex:1' }), wear)));
+      o.ideas.length ? h('div', { class: 'missing' },
+        h('span', {}, o.ideas.length === o.pieces.length ? 'Capi da prendere: ' : 'Per completarlo ti manca: '),
+        ...o.ideas.flatMap((it, i) => [i ? ', ' : null,
+          h('a', { href: shopLink(it), target: '_blank', rel: 'noopener' }, ideaName(it))].filter(Boolean)),
+        h('span', {}, ' (tocca per cercarlo online)')) : null,
+      h('div', { class: 'row' }, up, down, h('span', { style: 'flex:1' }), o.ideas.length === o.pieces.length ? null : wear)));
   }
+}
+
+// Ricerca del capo online con la taglia del profilo.
+function shopLink(it) {
+  const p = outfitState.profile || {};
+  const gender = { uomo: 'uomo', donna: 'donna' }[p.gender] || '';
+  const size = it.category === 'shoes' ? p.shoe : it.category === 'bottom' ? p.bottomSize : p.topSize;
+  const q = [ideaName(it), gender, size ? `taglia ${size}` : ''].filter(Boolean).join(' ');
+  return `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(q)}`;
 }
 
 // ---------- Profilo ----------

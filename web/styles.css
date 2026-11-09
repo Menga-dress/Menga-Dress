@@ -176,3 +176,11 @@ dialog .sheet-head h2 { margin: 0; }
 .stat { font-size: 13px; color: var(--muted); }
 
 .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; border: 1px solid rgba(127,127,127,.5); }
+
+.outfit .idea-tile {
+  aspect-ratio: 3/4; border-radius: 10px; border: 1px dashed rgba(127,127,127,.7);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  text-align: center; padding: 4px; font-size: 12px; font-weight: 600; line-height: 1.2;
+}
+.outfit .idea-tile small { font-weight: 400; opacity: .85; font-size: 11px; }
+.outfit .missing a { color: var(--accent); font-weight: 600; }
