@@ -25,8 +25,8 @@ I colori della foto sono riconosciuti in `web/js/colors.js` analizzando la parte
 
 ## Primo avvio
 
-1. GitHub Pages pubblica `web/` a ogni modifica su `main`: `https://mizral86.github.io/Dress/`.
-2. Sul telefono apri l'indirizzo con Chrome. Su Xiaomi conviene **⋮ → Aggiungi a schermata Home → Crea scorciatoia**.
+1. GitHub Pages pubblica `web/` a ogni modifica su `main`: `https://mizral86.github.io/Menga-Dress/`.
+2. Sul telefono apri l'indirizzo con Chrome. Poi **⋮ → Installa app**.
 
 ## Note tecniche
 
