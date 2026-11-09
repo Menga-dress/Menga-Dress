@@ -1,8 +1,8 @@
-# Dress
+# Menga Dress
 
 Il mio armadio digitale: fotografo i capi, l'AI li cataloga e ogni giorno mi propone cosa indossare in base a umore, occasione e meteo.
 
-È una web app installabile sul telefono, pubblicata con GitHub Pages. Non serve nessun server: armadio, outfit e profilo restano salvati sul telefono.
+Menga Dress è una web app installabile sul telefono, pubblicata con GitHub Pages. Non serve nessun server: armadio, outfit e profilo restano salvati sul telefono.
 
 ## Sezioni
 
