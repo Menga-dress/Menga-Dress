@@ -2,6 +2,7 @@ import * as db from './db.js';
 import { getWeather } from './weather.js';
 import { detectColors } from './colors.js';
 import { suggestOutfits, ideaName } from './stylist.js';
+import { lookSVG, lookPhotoURL } from './look.js';
 import {
   CATEGORIES, SEASONS, STYLES, PATTERNS, MOODS, OCCASIONS, FORMALITY, SUBTYPES, PALETTE, describeItem,
 } from './catalog.js';
@@ -458,6 +459,7 @@ function paintResults(box, items) {
     box.append(h('div', { class: 'card outfit' },
       h('h3', {}, o.title),
       h('p', {}, o.reason),
+      lookBox(o.pieces.map((p) => byId[p.id] || p)),
       h('div', { class: 'pieces' }, o.pieces.map((p) => {
         const it = byId[p.id] || p;
         if (it.idea) {
@@ -475,6 +477,26 @@ function paintResults(box, items) {
         h('span', {}, ' (tocca per cercarlo online)')) : null,
       h('div', { class: 'row' }, up, down, h('span', { style: 'flex:1' }), o.ideas.length === o.pieces.length ? null : wear)));
   }
+}
+
+// Anteprima: figurino disegnato subito, foto generata accanto quando arriva.
+function lookBox(pieces) {
+  const fig = h('div', { class: 'look-fig' });
+  fig.innerHTML = lookSVG(pieces);
+  const box = h('div', { class: 'look' }, fig);
+  if (navigator.onLine === false) return box;
+  const seed = [...pieces.map((p) => p.id).join('|')].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7) % 1000000;
+  const wait = h('div', { class: 'look-photo loading' }, h('span', { class: 'spinner' }), h('small', {}, 'Creo la foto…'));
+  const img = h('img', { alt: 'Foto generata dell\'outfit', referrerpolicy: 'no-referrer' });
+  const timer = setTimeout(() => wait.remove(), 60000);
+  img.addEventListener('load', () => {
+    clearTimeout(timer);
+    wait.replaceWith(h('figure', { class: 'look-photo' }, img, h('figcaption', {}, 'Foto generata, solo indicativa')));
+  });
+  img.addEventListener('error', () => { clearTimeout(timer); wait.remove(); });
+  img.src = lookPhotoURL(pieces, outfitState.profile?.gender, seed);
+  box.append(wait);
+  return box;
 }
 
 // Ricerca del capo online con la taglia del profilo.

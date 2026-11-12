@@ -13,6 +13,8 @@ Il mio armadio digitale: fotografo i capi e ogni giorno l'app mi propone cosa in
 
 ## Come funzionano i consigli
 
+Ogni proposta mostra un figurino con i colori dei capi e, se c'è rete, una foto indicativa generata gratis da [Pollinations](https://pollinations.ai) (senza chiave).
+
 Lo stylist è in `web/js/stylist.js` e usa regole di stile, senza servizi esterni:
 
 - formalità adatta all'occasione (es. lavoro 3–4, sport 1);
