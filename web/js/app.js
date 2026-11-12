@@ -7,6 +7,7 @@ import {
   CATEGORIES, SEASONS, STYLES, PATTERNS, MOODS, OCCASIONS, FORMALITY, SUBTYPES, PALETTE, describeItem,
 } from './catalog.js';
 
+const APP_VERSION = '13'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
 
@@ -690,6 +691,7 @@ async function openSettings() {
         h('button', { class: 'btn', type: 'button', onclick: doExport }, 'Scarica backup'),
         h('button', { class: 'btn', type: 'button', onclick: () => fileIn.click() }, 'Ripristina backup')),
       fileIn,
+      h('p', { class: 'hint' }, `Versione ${APP_VERSION}`),
     );
   });
 }
@@ -714,6 +716,21 @@ window.addEventListener('hashchange', route);
 route();
 db.askPersistence();
 
+// Aggiornamenti: controlla subito se c'è una versione nuova (anche quando riapri l'app)
+// e, appena è installata, ricarica la pagina da sola.
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloaded) return;
+    reloaded = true;
+    location.reload();
+  });
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((reg) => {
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') reg.update().catch(() => {});
+      });
+    }).catch(() => {});
+  });
 }
