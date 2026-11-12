@@ -1,5 +1,5 @@
 // Rende l'app installabile e utilizzabile anche offline (le chiamate AI e meteo richiedono la rete).
-const CACHE = 'dress-v8';
+const CACHE = 'dress-v9';
 const SHELL = [
   './',
   './index.html',
@@ -12,9 +12,9 @@ const SHELL = [
   './js/weather.js',
   './js/catalog.js',
   './js/look.js',
-  './icons/favicon.png',
-  './icons/icon-192.png',
-  './icons/icon-512.png',
+  './icons/favicon-v3.png',
+  './icons/icon-192-v3.png',
+  './icons/icon-512-v3.png',
 ];
 
 self.addEventListener('install', (e) => {
