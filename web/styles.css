@@ -187,9 +187,9 @@ dialog .sheet-head h2 { margin: 0; }
 
 .outfit .look { margin-bottom: 12px; }
 .outfit .look-photo { flex: 1; margin: 0; }
-.outfit .look-photo img { width: 100%; aspect-ratio: 512 / 704; object-fit: cover; border-radius: 12px; border: 1px solid var(--line); display: block; }
+.outfit .look-photo img { width: 100%; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 12px; border: 1px solid var(--line); display: block; }
 .outfit .look-photo figcaption, .outfit .look-photo .cap { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; }
 .outfit .look-photo.loading {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
-  aspect-ratio: 512 / 704; border: 1px dashed var(--line); border-radius: 12px; color: var(--muted); text-align: center; padding: 12px;
+  aspect-ratio: 2 / 3; border: 1px dashed var(--line); border-radius: 12px; color: var(--muted); text-align: center; padding: 12px;
 }
