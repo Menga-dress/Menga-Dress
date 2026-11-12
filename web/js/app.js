@@ -480,22 +480,52 @@ function paintResults(box, items) {
 }
 
 // Anteprima: figurino disegnato subito, foto generata accanto quando arriva.
+// Il generatore gratuito accetta una richiesta alla volta: le foto vengono chieste in fila,
+// con qualche nuovo tentativo, e se proprio non arrivano resta un pulsante "Riprova".
+let photoQueue = Promise.resolve();
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function loadImage(img, src, timeoutMs) {
+  return new Promise((resolve) => {
+    const done = (ok) => { clearTimeout(t); img.onload = img.onerror = null; resolve(ok); };
+    const t = setTimeout(() => done(false), timeoutMs);
+    img.onload = () => done(true);
+    img.onerror = () => done(false);
+    img.src = src;
+  });
+}
+
 function lookBox(pieces) {
   const fig = h('div', { class: 'look-fig' });
   fig.innerHTML = lookSVG(pieces);
   const box = h('div', { class: 'look' }, fig);
-  if (navigator.onLine === false) return box;
-  const seed = [...pieces.map((p) => p.id).join('|')].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7) % 1000000;
-  const wait = h('div', { class: 'look-photo loading' }, h('span', { class: 'spinner' }), h('small', {}, 'Creo la foto…'));
-  const img = h('img', { alt: 'Foto generata dell\'outfit', referrerpolicy: 'no-referrer' });
-  const timer = setTimeout(() => wait.remove(), 60000);
-  img.addEventListener('load', () => {
-    clearTimeout(timer);
-    wait.replaceWith(h('figure', { class: 'look-photo' }, img, h('figcaption', {}, 'Foto generata, solo indicativa')));
-  });
-  img.addEventListener('error', () => { clearTimeout(timer); wait.remove(); });
-  img.src = lookPhotoURL(pieces, outfitState.profile?.gender, seed);
-  box.append(wait);
+  const baseSeed = [...pieces.map((p) => p.id).join('|')].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7) % 1000000;
+  const slot = h('div', { class: 'look-photo loading' });
+  box.append(slot);
+
+  const request = () => {
+    slot.className = 'look-photo loading';
+    slot.replaceChildren(h('span', { class: 'spinner' }), h('small', {}, 'Creo la foto…'));
+    photoQueue = photoQueue.then(async () => {
+      if (!slot.isConnected) return;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt) await pause(4000 * attempt);
+        if (!slot.isConnected) return;
+        const img = h('img', { alt: 'Foto generata dell\'outfit', referrerpolicy: 'no-referrer' });
+        const ok = await loadImage(img, lookPhotoURL(pieces, outfitState.profile?.gender, baseSeed + attempt), 90000);
+        if (ok) {
+          slot.className = 'look-photo';
+          slot.replaceChildren(img, h('small', { class: 'cap' }, 'Foto generata, solo indicativa'));
+          return;
+        }
+      }
+      const retry = h('button', { class: 'btn', type: 'button' }, 'Riprova');
+      retry.addEventListener('click', request);
+      slot.className = 'look-photo loading';
+      slot.replaceChildren(h('small', {}, 'Foto non arrivata'), retry);
+    });
+  };
+  request();
   return box;
 }
 
