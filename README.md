@@ -13,7 +13,7 @@ Il mio armadio digitale: fotografo i capi e ogni giorno l'app mi propone cosa in
 
 ## Come funzionano i consigli
 
-Ogni proposta mostra un figurino con i colori dei capi e, se c'è rete, una foto indicativa generata gratis da [Pollinations](https://pollinations.ai) (senza chiave).
+Ogni proposta mostra il manichino Menga Dress con i colori dei capi proposti, disegnato all'istante sul telefono (nessuna rete, nessuna attesa).
 
 Lo stylist è in `web/js/stylist.js` e usa regole di stile, senza servizi esterni:
 

@@ -2,12 +2,12 @@ import * as db from './db.js';
 import { getWeather } from './weather.js';
 import { detectColors } from './colors.js';
 import { suggestOutfits, ideaName } from './stylist.js';
-import { lookPhotoURL } from './look.js';
+import { lookCanvas } from './look.js';
 import {
   CATEGORIES, SEASONS, STYLES, PATTERNS, MOODS, OCCASIONS, FORMALITY, SUBTYPES, PALETTE, describeItem,
 } from './catalog.js';
 
-const APP_VERSION = '13'; // da aumentare a ogni modifica, si vede nelle Impostazioni
+const APP_VERSION = '14'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
 
@@ -460,7 +460,7 @@ function paintResults(box, items) {
     box.append(h('div', { class: 'card outfit' },
       h('h3', {}, o.title),
       h('p', {}, o.reason),
-      lookBox(o.pieces.map((p) => byId[p.id] || p), o === outfitState.results[0]),
+      lookBox(o.pieces.map((p) => byId[p.id] || p)),
       h('div', { class: 'pieces' }, o.pieces.map((p) => {
         const it = byId[p.id] || p;
         if (it.idea) {
@@ -480,111 +480,9 @@ function paintResults(box, items) {
   }
 }
 
-// Anteprima: foto generata dei capi su un manichino.
-// Il generatore gratuito (Pollinations, senza chiave) concede 1 foto ogni 45 secondi:
-// - le foto si chiedono in fila, distanziate di almeno 50 s (anche tra un'apertura e l'altra);
-// - ogni foto riuscita resta salvata sul telefono, così non si richiede due volte;
-// - se arriva il cartello giallo "Free limit reached" lo si scarta e si riprova più tardi;
-// - solo la prima proposta parte da sola, le altre con il pulsante "Mostra foto".
-const PHOTO_GAP = 50000;
-const PHOTO_CACHE = 'menga-look-photos';
-const LAST_KEY = 'menga-last-photo-request';
-let photoQueue = Promise.resolve();
-const pause = (ms) => new Promise((r) => setTimeout(r, ms));
-const lastRequest = () => { try { return Number(localStorage.getItem(LAST_KEY)) || 0; } catch { return 0; } };
-const markRequest = () => { try { localStorage.setItem(LAST_KEY, String(Date.now())); } catch { /* niente */ } };
-
-async function cachedPhoto(url) {
-  try {
-    const res = await (await caches.open(PHOTO_CACHE)).match(url);
-    return res ? URL.createObjectURL(await res.blob()) : null;
-  } catch { return null; }
-}
-
-// Il cartello del limite è quasi tutto giallo pieno: lo riconosco dai pixel.
-async function isLimitPlaceholder(blob) {
-  try {
-    const bmp = await createImageBitmap(blob);
-    const c = document.createElement('canvas');
-    c.width = 32; c.height = 32;
-    const ctx = c.getContext('2d');
-    ctx.drawImage(bmp, 0, 0, 32, 32);
-    const d = ctx.getImageData(0, 0, 32, 32).data;
-    let yellow = 0;
-    for (let i = 0; i < d.length; i += 4) {
-      const [r, g, b] = [d[i], d[i + 1], d[i + 2]];
-      if (r > 220 && g > 180 && b < 150 && r - b > 100) yellow++;
-    }
-    return yellow > 32 * 32 * 0.5;
-  } catch { return false; }
-}
-
-// Scarica una foto: 'ok' con l'indirizzo locale, 'limit' se il generatore chiede di aspettare, 'error' altrimenti.
-async function fetchPhoto(url) {
-  markRequest();
-  try {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 90000);
-    const res = await fetch(url, { signal: ctrl.signal, referrerPolicy: 'no-referrer' });
-    clearTimeout(t);
-    if (res.status === 429 || res.status === 402) return { status: 'limit' };
-    if (!res.ok) return { status: 'error' };
-    const blob = await res.blob();
-    if (!blob.type.startsWith('image/')) return { status: 'error' };
-    if (await isLimitPlaceholder(blob)) return { status: 'limit' };
-    try { await (await caches.open(PHOTO_CACHE)).put(url, new Response(blob, { headers: { 'Content-Type': blob.type } })); } catch { /* niente */ }
-    return { status: 'ok', src: URL.createObjectURL(blob) };
-  } catch { return { status: 'error' }; }
-}
-
-function lookBox(pieces, auto) {
-  const box = h('div', { class: 'look' });
-  const seed = [...pieces.map((p) => p.id).join('|')].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7) % 1000000;
-  const url = lookPhotoURL(pieces, outfitState.profile?.gender, seed);
-  const slot = h('div', { class: 'look-photo loading' });
-  box.append(slot);
-
-  const show = (src) => {
-    slot.className = 'look-photo';
-    slot.replaceChildren(h('img', { src, alt: 'Foto generata dell\'outfit' }), h('small', { class: 'cap' }, 'Foto generata, solo indicativa'));
-  };
-  const offer = (msg, label) => {
-    const b = h('button', { class: 'btn', type: 'button' }, label);
-    b.addEventListener('click', request);
-    slot.className = 'look-photo loading';
-    slot.replaceChildren(msg ? h('small', {}, msg) : null, b);
-  };
-  const status = (text) => {
-    slot.className = 'look-photo loading';
-    slot.replaceChildren(h('span', { class: 'spinner' }), h('small', {}, text));
-  };
-
-  function request() {
-    status('In coda…');
-    photoQueue = photoQueue.then(async () => {
-      for (let attempt = 0; attempt < 4; attempt++) {
-        if (!slot.isConnected) return;
-        // Rispetto il limite del generatore gratuito, mostrando il conto alla rovescia.
-        for (let wait = lastRequest() + PHOTO_GAP - Date.now(); wait > 0; wait = lastRequest() + PHOTO_GAP - Date.now()) {
-          if (!slot.isConnected) return;
-          status(`La foto arriva tra ${Math.ceil(wait / 1000)} s (il generatore gratuito ne fa una ogni minuto circa)`);
-          await pause(Math.min(wait, 1000));
-        }
-        status('Creo la foto…');
-        const r = await fetchPhoto(url);
-        if (r.status === 'ok') { show(r.src); return; }
-        if (r.status === 'error' && attempt >= 1) break;
-      }
-      offer('Foto non arrivata', 'Riprova');
-    });
-  }
-
-  cachedPhoto(url).then((src) => {
-    if (src) show(src);
-    else if (auto && navigator.onLine !== false) request();
-    else offer(null, 'Mostra foto');
-  });
-  return box;
+// Anteprima: il manichino con i colori dei capi proposti, disegnato subito sul telefono.
+function lookBox(pieces) {
+  return h('figure', { class: 'look' }, lookCanvas(pieces), h('figcaption', {}, 'Anteprima dei colori sul manichino'));
 }
 
 // Ricerca del capo online con la taglia del profilo.
