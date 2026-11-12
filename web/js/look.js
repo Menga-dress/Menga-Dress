@@ -1,5 +1,5 @@
 // Anteprima visiva dell'outfit: una foto generata gratis da Pollinations (nessuna chiave),
-// con i capi indossati da un manichino da negozio.
+// con i capi indossati da un manichino beige su piedistallo, sfondo marrone e oro.
 
 // Traduzioni per la descrizione inviata al generatore di immagini (funziona meglio in inglese).
 const EN_TYPE = {
@@ -26,8 +26,10 @@ export function lookPhotoURL(pieces, gender, seed) {
     const c = String(p.colors?.[0] || '').toLowerCase().trim();
     return `${EN_COLOR[c] || c} ${EN_TYPE[p.subcategory] || EN_CAT[p.category] || ''}`.trim();
   });
-  const prompt = `E-commerce catalog photo of a headless white ${who} store mannequin, full body, front view, `
-    + `dressed in: ${parts.join(', ')}. Exact colors: ${parts.join('; ')}. `
-    + 'Plain light grey seamless studio background, soft even lighting, sharp focus, no people, no face, no text';
-  return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=512&height=704&nologo=true&model=flux&seed=${seed}`;
+  const prompt = `Photorealistic 3D render of a full body faceless matte beige ${who} mannequin with a smooth oval head, `
+    + `standing in a natural relaxed pose on a round dark pedestal with a warm glowing rim, wearing: ${parts.join(', ')}. `
+    + `Exact garment colors: ${parts.join('; ')}. `
+    + 'Warm brown gradient studio backdrop with a thin gold circle behind the figure, soft studio lighting, '
+    + 'luxury fashion catalog style, centered, front view, no people, no text';
+  return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=512&height=768&nologo=true&model=flux&seed=${seed}`;
 }
