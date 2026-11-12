@@ -1,5 +1,5 @@
 // Rende l'app installabile e utilizzabile anche offline (le chiamate AI e meteo richiedono la rete).
-const CACHE = 'dress-v12';
+const CACHE = 'dress-v13';
 const SHELL = [
   './',
   './index.html',
@@ -34,8 +34,11 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== self.location.origin) return;
   e.respondWith(
-    fetch(e.request)
+    // no-cache: chiede sempre al server se il file è cambiato (GitHub Pages altrimenti
+    // lascia usare per 10 minuti la copia vecchia del browser).
+    fetch(e.request.url, { cache: 'no-cache', credentials: 'same-origin' })
       .then((res) => {
+        if (!res.ok) return res;
         const copy = res.clone();
         caches.open(CACHE).then((c) => c.put(e.request, copy));
         return res;
