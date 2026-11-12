@@ -9,7 +9,7 @@ const H = 768;
 const ZONE = { jacket: 1, tee: 2, trousers: 3, shoes: 4 };
 const BASES = ['lavoro', 'tempo_libero', 'serata', 'sport', 'viaggio', 'evento'];
 // Manichini senza capospalla: la giacca proposta, se c'è, va sulla maglia.
-const NO_JACKET = new Set(['tempo_libero', 'evento']);
+const NO_JACKET = new Set(['tempo_libero', 'sport', 'evento']);
 
 const assets = {};
 function loadAssets(name) {
