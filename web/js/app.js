@@ -2,7 +2,7 @@ import * as db from './db.js';
 import { getWeather } from './weather.js';
 import { detectColors } from './colors.js';
 import { suggestOutfits, ideaName } from './stylist.js';
-import { lookSVG, lookPhotoURL } from './look.js';
+import { lookPhotoURL } from './look.js';
 import {
   CATEGORIES, SEASONS, STYLES, PATTERNS, MOODS, OCCASIONS, FORMALITY, SUBTYPES, PALETTE, describeItem,
 } from './catalog.js';
@@ -479,7 +479,7 @@ function paintResults(box, items) {
   }
 }
 
-// Anteprima: figurino disegnato subito, foto generata accanto quando arriva.
+// Anteprima: foto generata dei capi su un manichino.
 // Il generatore gratuito accetta una richiesta alla volta: le foto vengono chieste in fila,
 // con qualche nuovo tentativo, e se proprio non arrivano resta un pulsante "Riprova".
 let photoQueue = Promise.resolve();
@@ -496,9 +496,7 @@ function loadImage(img, src, timeoutMs) {
 }
 
 function lookBox(pieces) {
-  const fig = h('div', { class: 'look-fig' });
-  fig.innerHTML = lookSVG(pieces);
-  const box = h('div', { class: 'look' }, fig);
+  const box = h('div', { class: 'look' });
   const baseSeed = [...pieces.map((p) => p.id).join('|')].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7) % 1000000;
   const slot = h('div', { class: 'look-photo loading' });
   box.append(slot);
