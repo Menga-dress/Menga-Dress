@@ -7,7 +7,7 @@ import {
   CATEGORIES, SEASONS, STYLES, PATTERNS, MOODS, OCCASIONS, FORMALITY, SUBTYPES, PALETTE, describeItem,
 } from './catalog.js';
 
-const APP_VERSION = '15'; // da aumentare a ogni modifica, si vede nelle Impostazioni
+const APP_VERSION = '16'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
 
