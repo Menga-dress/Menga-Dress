@@ -54,12 +54,21 @@ for z in (1, 2, 3, 4):
     m = zone == z
     zone[m & ~keep_big(m, 300 if z == 4 else 60)] = 0
 
+# Buchi dentro un capo (riflessi chiari del jeans, cuciture): li chiude se il pixel non è scuro
+# come il manichino.
+HUES = {1: ((h < 25) | (h > 335)), 2: ((h >= 75) & (h < 170)), 3: ((h >= 190) & (h < 270))}
+for z in (1, 2, 3):
+    m = Image.fromarray(((zone == z) * 255).astype(np.uint8))
+    closed = np.asarray(m.filter(ImageFilter.MaxFilter(21)).filter(ImageFilter.MinFilter(21))) > 0
+    fill = closed & (zone == 0) & ((HUES[z] & (s > 0.2) & (v > 0.03)) | ((v > 0.18) & (s < 0.35)))
+    zone[fill] = z
+
 # Riflesso delle scarpe sul piedistallo: giallo meno saturo appena sotto le scarpe.
 ys, xs = np.nonzero(zone == 4)
 if len(ys):
     near = np.zeros((H, W), bool)
-    near[ys.max() - 30:min(H, ys.max() + 45), max(0, xs.min() - 6):xs.max() + 6] = True
-    refl = near & (zone == 0) & (s > 0.3) & (v > 0.08) & (h >= 30) & (h < 75)
+    near[ys.max() - 30:min(H, ys.max() + 28), max(0, xs.min() - 6):xs.max() + 6] = True
+    refl = near & (zone == 0) & (s > 0.4) & (v > 0.08) & (h >= 36) & (h < 72)
     zone[refl] = 4
 
 # Luce: luminosità rispetto al colore pieno della zona.
@@ -72,7 +81,7 @@ for z in (1, 2, 3, 4):
 G = np.clip(shade * 128, 0, 255)
 
 # Copertura morbida sui bordi: più il pixel è saturo, più è capo.
-cover = np.clip((s - 0.2) / 0.3, 0, 1) * (zone > 0)
+cover = np.where(garment, np.clip((s - 0.2) / 0.3, 0, 1), 1.0) * (zone > 0)
 # Allarga di un pixel la zona per coprire i bordi sfumati del disegno originale.
 zimg = Image.fromarray(zone * 60).filter(ImageFilter.MaxFilter(3))
 zone_d = np.asarray(zimg) // 60
