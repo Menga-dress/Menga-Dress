@@ -570,8 +570,13 @@ function choosePhoto(pieces, occasion) {
   if (/blazer|cappotto|trench/.test(outer) || /completo/.test(sub('dress'))) {
     // Blazer su t-shirt/maglia o con i jeans: look smart casual.
     if (!/camicia/.test(top) || /jeans/.test(bottom)) return 'blazer-tshirt';
-    return /sneaker|corsa/.test(shoes) ? 'blazer-sneakers' : 'blazer';
+    if (/sneaker|corsa/.test(shoes)) return 'blazer-sneakers';
+    if (occasion === 'lavoro') return pick(['blazer-lavoro', 'blazer']); // con la ventiquattrore
+    if (occasion === 'serata' || occasion === 'evento') return pick(['blazer-pochette', 'blazer']);
+    return 'blazer';
   }
+  // In viaggio: giacca aperta, borsone e trolley.
+  if (occasion === 'viaggio' && !/camicia/.test(top)) return 'viaggio';
   if (/sportiv|legging/.test(bottom) || /tuta/.test(sub('dress'))) return 'sport'; // felpa aperta e jogger
   if (outer) return 'casual'; // giubbotto aperto su maglietta
   if (/felpa/.test(top)) return pick(['felpa', 'felpa-zip']);
@@ -613,7 +618,7 @@ function photoColors(pieces, occasion, base) {
   const outer = get('outerwear') || (suit ? dress : null);
   // Felpa aperta, camicia aperta e jogger: senza giacca il capo aperto è la maglia proposta,
   // e sotto c'è una t-shirt bianca (blu scuro se la maglia è già chiara).
-  const layered = !outer && ['felpa-zip', 'camicia-aperta', 'sport'].includes(base);
+  const layered = !outer && ['felpa-zip', 'camicia-aperta', 'sport', 'viaggio'].includes(base);
   const tee = colorOf(lum(top) > 0.8 ? 'blu navy' : 'bianco');
   return {
     // Completo e tuta: giacca e pantaloni dello stesso colore. Altrimenti senza giacca proposta
