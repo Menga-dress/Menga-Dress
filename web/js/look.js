@@ -555,35 +555,46 @@ const PW = 640;
 const PH = 960;
 // Manichini disponibili (immagini di Luciano in colori pieni): l'app sceglie quello che somiglia
 // di più ai capi proposti.
+// Ogni occasione ha i suoi manichini (come nel pacchetto di Luciano); i capi proposti scelgono
+// solo la variante dentro l'occasione.
 function choosePhoto(pieces, occasion) {
-  const def = DEFAULTS[occasion] || DEFAULTS.tempo_libero;
   const sub = (cat) => String(pieces.find((p) => p.category === cat)?.subcategory || '').toLowerCase();
   const outer = sub('outerwear');
-  const top = sub('top') || def.top[0].toLowerCase();
-  const bottom = sub('bottom') || def.bottom[0].toLowerCase();
-  const shoes = sub('shoes') || def.shoes[0].toLowerCase();
+  const top = sub('top');
+  const bottom = sub('bottom');
+  const shoes = sub('shoes');
+  const blazer = /blazer|cappotto|trench/.test(outer) || /completo/.test(sub('dress'));
   // Varietà: tra due manichini adatti, proposte diverse ne usano di diversi.
   const seed = pieces.map((p) => p.id || p.subcategory || '').join('|');
   let hash = 0;
   for (const ch of seed) hash = (hash * 31 + ch.charCodeAt(0)) | 0;
   const pick = (list) => list[Math.abs(hash) % list.length];
-  if (/blazer|cappotto|trench/.test(outer) || /completo/.test(sub('dress'))) {
-    // Blazer su t-shirt/maglia o con i jeans: look smart casual.
-    if (!/camicia/.test(top) || /jeans/.test(bottom)) return 'blazer-tshirt';
-    if (/sneaker|corsa/.test(shoes)) return 'blazer-sneakers';
-    if (occasion === 'lavoro') return pick(['blazer-lavoro', 'blazer']); // con la ventiquattrore
-    if (occasion === 'serata' || occasion === 'evento') return pick(['blazer-pochette', 'blazer']);
-    return 'blazer';
+  const tshirt = top && !/camicia/.test(top);
+  switch (occasion) {
+    case 'lavoro':
+      if (tshirt || /jeans/.test(bottom)) return 'blazer-tshirt';
+      if (/sneaker|corsa/.test(shoes)) return 'blazer-sneakers';
+      return pick(['blazer', 'blazer-lavoro']);
+    case 'evento':
+      if (tshirt) return 'blazer-tshirt';
+      return pick(['blazer-pochette', 'blazer-lavoro']);
+    case 'serata':
+      if (blazer) return tshirt ? 'blazer-tshirt' : 'blazer-pochette';
+      return 'camicia-aperta';
+    case 'sport':
+      return 'sport';
+    case 'viaggio':
+      return 'viaggio';
+    default: // tempo libero
+      if (blazer) return 'blazer-tshirt';
+      if (/felpa|maglione|cardigan/.test(top) && !outer) return pick(['felpa', 'felpa-zip']);
+      if (outer) return 'casual';
+      return pick(['felpa-zip', 'casual']);
   }
-  // In viaggio: giacca aperta, borsone e trolley.
-  if (occasion === 'viaggio' && !/camicia/.test(top)) return 'viaggio';
-  if (/sportiv|legging/.test(bottom) || /tuta/.test(sub('dress'))) return 'sport'; // felpa aperta e jogger
-  if (outer) return 'casual'; // giubbotto aperto su maglietta
-  if (/felpa/.test(top)) return pick(['felpa', 'felpa-zip']);
-  if (/maglione|cardigan|maglia sportiva/.test(top)) return 'felpa';
-  if (/camicia/.test(top)) return 'camicia-aperta';
-  return 'casual';
 }
+
+// Giacca suggerita quando l'occasione la vuole ma la proposta non ne ha una.
+const JACKET = { lavoro: 'blu navy', evento: 'blu navy', serata: 'nero' };
 
 const photos = {};
 function loadPhoto(name) {
@@ -618,12 +629,18 @@ function photoColors(pieces, occasion, base) {
   const outer = get('outerwear') || (suit ? dress : null);
   // Felpa aperta, camicia aperta e jogger: senza giacca il capo aperto è la maglia proposta,
   // e sotto c'è una t-shirt bianca (blu scuro se la maglia è già chiara).
-  const layered = !outer && ['felpa-zip', 'camicia-aperta', 'sport', 'viaggio'].includes(base);
+  const layered = !outer && ['felpa-zip', 'camicia-aperta', 'sport', 'viaggio', 'casual'].includes(base);
   const tee = colorOf(lum(top) > 0.8 ? 'blu navy' : 'bianco');
+  // Blazer senza giacca proposta: blazer suggerito, grigio se la maglia è dello stesso colore.
+  let jacket = outer;
+  if (!jacket && base.startsWith('blazer')) {
+    jacket = colorOf(JACKET[occasion] || 'blu navy');
+    if (Math.abs(lum(jacket) - lum(top)) < 0.12) jacket = colorOf('grigio');
+  }
   return {
-    // Completo e tuta: giacca e pantaloni dello stesso colore. Altrimenti senza giacca proposta
-    // sembra una camicia aperta del colore della maglia.
-    1: outer || top,
+    // Completo e tuta: giacca e pantaloni dello stesso colore. Felpa, camicia o giubbotto aperti
+    // senza giacca proposta prendono il colore della maglia, con una t-shirt sotto.
+    1: jacket || top,
     2: layered || (suit && !get('top')) ? tee : top,
     3: get('bottom') || dress || colorOf(def.bottom[1]),
     4: get('shoes') || colorOf(def.shoes[1]),
