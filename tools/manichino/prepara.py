@@ -52,7 +52,15 @@ def keep_big(mask, min_px):
 
 for z in (1, 2, 3, 4):
     m = zone == z
-    zone[m & ~keep_big(m, 400)] = 0
+    zone[m & ~keep_big(m, 300 if z == 4 else 60)] = 0
+
+# Riflesso delle scarpe sul piedistallo: giallo meno saturo appena sotto le scarpe.
+ys, xs = np.nonzero(zone == 4)
+if len(ys):
+    near = np.zeros((H, W), bool)
+    near[ys.max() - 30:min(H, ys.max() + 45), max(0, xs.min() - 6):xs.max() + 6] = True
+    refl = near & (zone == 0) & (s > 0.3) & (v > 0.08) & (h >= 30) & (h < 75)
+    zone[refl] = 4
 
 # Luce: luminosità rispetto al colore pieno della zona.
 shade = np.zeros((H, W), np.float32)

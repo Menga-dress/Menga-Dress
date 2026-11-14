@@ -1,5 +1,5 @@
 // Rende l'app installabile e utilizzabile anche offline (le chiamate AI e meteo richiedono la rete).
-const CACHE = 'dress-v19';
+const CACHE = 'dress-v20';
 const SHELL = [
   './',
   './index.html',
@@ -14,6 +14,12 @@ const SHELL = [
   './js/look.js',
   './img/manichino/casual.jpg',
   './img/manichino/casual-zone.png',
+  './img/manichino/blazer.jpg',
+  './img/manichino/blazer-zone.png',
+  './img/manichino/blazer-sneakers.jpg',
+  './img/manichino/blazer-sneakers-zone.png',
+  './img/manichino/felpa.jpg',
+  './img/manichino/felpa-zone.png',
   './icons/favicon-v3.png',
   './icons/icon-192-v3.png',
   './icons/icon-512-v3.png',
