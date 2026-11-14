@@ -1,6 +1,7 @@
 // Anteprima visiva dell'outfit, istantanea e senza rete: un manichino disegnato in SVG con i capi
 // proposti. Ogni capo ha la sua forma (camicia, felpa, blazer, jeans, sneakers...) e il colore del
-// capo vero, quindi i contorni sono sempre netti. Se manca un capo si usa quello tipico dell'occasione.
+// capo vero, con sopra luci, ombre e pieghe che danno volume (effetto 3D) qualunque sia il colore.
+// Se manca un capo si usa quello tipico dell'occasione.
 import { PALETTE } from './catalog.js';
 
 const VW = 400;
@@ -67,8 +68,17 @@ const pair = (pts, closed = true) => curve(pts, closed) + curve(pts.map(mx), clo
 // ---------- disegno ----------
 
 class Sketch {
-  constructor(id) { this.id = id; this.defs = []; this.out = []; this.n = 0; }
-  // Riempimento con un leggero volume (più chiaro a sinistra), senza ombre portate.
+  constructor(id) {
+    this.id = id; this.out = []; this.n = 0;
+    // Luce da sinistra: ogni forma diventa un "cilindro" (bordo in ombra, riflesso chiaro, lato destro scuro).
+    this.defs = [
+      `<linearGradient id="${id}sh" x1="0" x2="1"><stop offset="0" stop-color="#000" stop-opacity=".42"/><stop offset=".12" stop-color="#000" stop-opacity=".08"/><stop offset=".3" stop-color="#fff" stop-opacity=".2"/><stop offset=".48" stop-color="#fff" stop-opacity="0"/><stop offset=".78" stop-color="#000" stop-opacity=".16"/><stop offset="1" stop-color="#000" stop-opacity=".5"/></linearGradient>`,
+      `<linearGradient id="${id}sv" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".1"/><stop offset=".35" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".22"/></linearGradient>`,
+      `<filter id="${id}b1" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="1.6"/></filter>`,
+      `<filter id="${id}b2" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="4"/></filter>`,
+    ];
+  }
+  // Colore di base del capo, con una leggera sfumatura.
   fill(c, pattern, c2) {
     const g = `${this.id}g${this.n++}`;
     this.defs.push(`<linearGradient id="${g}" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="${css(lighten(c, 0.14))}"/><stop offset=".5" stop-color="${css(c)}"/><stop offset="1" stop-color="${css(darken(c, 0.16))}"/></linearGradient>`);
@@ -87,16 +97,30 @@ class Sketch {
     this.defs.push(`<pattern id="${p}" width="${size}" height="${size}" patternUnits="userSpaceOnUse">${motif}</pattern>`);
     return `url(#${p})`;
   }
-  shape(d, g, extra = '') { this.out.push(`<path d="${d}" fill="${g.fill}" ${extra}/>`); }
-  // Cuciture, pieghe, bottoni: linee sottili, mai ombre.
+  // Forma piena del capo + luci e ombre sopra (vert = anche sfumatura dall'alto in basso).
+  shape(d, g, extra = '', vert = false) {
+    this.out.push(`<path d="${d}" fill="${g.fill}" ${extra}/>`);
+    if (g.flat) return;
+    this.out.push(`<path d="${d}" fill="url(#${this.id}sh)"/>`);
+    if (vert) this.out.push(`<path d="${d}" fill="url(#${this.id}sv)"/>`);
+  }
+  // Piega del tessuto: un solco scuro sfumato con un filo di luce accanto.
+  fold(d, w = 3, op = 0.32) {
+    this.out.push(`<path d="${d}" fill="none" stroke="#000" stroke-opacity="${op}" stroke-width="${w}" stroke-linecap="round" filter="url(#${this.id}b1)"/>`);
+    this.out.push(`<path d="${d}" fill="none" stroke="#fff" stroke-opacity="${op * 0.35}" stroke-width="${w * 0.4}" stroke-linecap="round" transform="translate(-1.6 -.6)" filter="url(#${this.id}b1)"/>`);
+  }
+  // Ombra portata morbida (sotto colletto, revers, orlo della giacca, cintura).
+  shadow(d, op = 0.4, soft = 1) { this.out.push(`<path d="${d}" fill="#000" fill-opacity="${op}" filter="url(#${this.id}${soft > 1 ? 'b2' : 'b1'})"/>`); }
+  // Cuciture e bottoni: linee sottili.
   stroke(d, c, w = 1.3, extra = '') { this.out.push(`<path d="${d}" fill="none" stroke="${typeof c === 'string' ? c : line(c)}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" ${extra}/>`); }
   raw(s) { this.out.push(s); }
 }
 
 const garment = (sk, c, pattern, c2) => ({ c, fill: sk.fill(c, pattern, c2) });
 
-// Linea centrale del braccio sinistro (spalla → polso) e della mano.
-const ARM = [[151, 132], [141, 200], [133, 292]];
+// Linea centrale del braccio sinistro (spalla → gomito → polso): lungo il corpo o con la mano in tasca.
+const ARMS = { down: [[151, 132], [141, 200], [133, 292]], pocket: [[151, 132], [137, 210], [161, 290]] };
+let ARM = ARMS.down;
 const armPath = (from = 0, to = 1) => {
   const at = (t) => {
     const s = t * 2;
@@ -108,11 +132,41 @@ const armPath = (from = 0, to = 1) => {
   for (let t = from; t <= to + 1e-6; t += (to - from) / 6) pts.push(at(t));
   return pts;
 };
-const sleeve = (sk, g, to, width) => {
+// Manica (o braccio) come tubo pieno: contorno netto, luce sul lato sinistro e ombra su quello destro.
+const tube = (pts, width) => {
+  const L = []; const R = []; const N = [];
+  pts.forEach((p, i) => {
+    const a = pts[Math.max(0, i - 1)]; const b = pts[Math.min(pts.length - 1, i + 1)];
+    let dx = b[0] - a[0]; let dy = b[1] - a[1]; const len = Math.hypot(dx, dy) || 1; dx /= len; dy /= len;
+    let n = [-dy, dx]; if (n[0] > 0) n = [dy, -dx]; // normale verso sinistra (verso la luce)
+    const w = width * (1 - 0.14 * (i / (pts.length - 1))) / 2;
+    N.push([n, w]);
+    L.push([p[0] + n[0] * w, p[1] + n[1] * w]); R.push([p[0] - n[0] * w, p[1] - n[1] * w]);
+  });
+  L[L.length - 1][2] = 'c'; R[R.length - 1][2] = 'c';
+  const [p0, p1] = pts; const d0 = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) || 1;
+  const cap = [p0[0] - (p1[0] - p0[0]) / d0 * width * 0.3, p0[1] - (p1[1] - p0[1]) / d0 * width * 0.3];
+  const off = (k) => curve(pts.map((p, i) => [p[0] + N[i][0][0] * N[i][1] * k, p[1] + N[i][0][1] * N[i][1] * k]), false);
+  return { d: curve([cap, ...L, ...R.reverse()]), hi: off(0.45), lo: off(-0.62) };
+};
+const sleeve = (sk, g, to, width, folds = true) => {
   const pts = armPath(0, to);
-  const d = curve(pts, false);
-  const dm = curve(pts.map(mx), false);
-  sk.raw(`<path d="${d}${dm}" fill="none" stroke="${g.fill}" stroke-width="${width}" stroke-linecap="butt"/>`);
+  for (const side of [pts, pts.map(mx)]) {
+    const tb = tube(side, width);
+    const clip = `${sk.id}c${sk.n++}`;
+    sk.defs.push(`<clipPath id="${clip}"><path d="${tb.d}"/></clipPath>`);
+    sk.raw(`<path d="${tb.d}" fill="${g.fill}"/>`);
+    sk.raw(`<g clip-path="url(#${clip})"><path d="${tb.lo}" fill="none" stroke="#000" stroke-opacity=".38" stroke-width="${fmt(width * 0.32)}" stroke-linecap="round" filter="url(#${sk.id}b2)"/><path d="${tb.hi}" fill="none" stroke="#fff" stroke-opacity=".2" stroke-width="${fmt(width * 0.22)}" stroke-linecap="round" filter="url(#${sk.id}b1)"/></g>`);
+  }
+  if (!folds) return pts[pts.length - 1];
+  // Pieghe al gomito e attaccatura della spalla.
+  if (to > 0.5) {
+    const [ex, ey] = ARM[1];
+    const bent = ARM === ARMS.pocket;
+    sk.fold(`M${ex - 8} ${ey - 4} q8 ${bent ? 8 : 4} 15 ${bent ? -2 : 1} M${VW - ex + 8} ${ey - 4} q-8 ${bent ? 8 : 4} -15 ${bent ? -2 : 1}`, 2.6, 0.38);
+    sk.fold(`M${ex - 6} ${ey + 10} q7 3 13 0 M${VW - ex + 6} ${ey + 10} q-7 3 -13 0`, 2, 0.25);
+  }
+  sk.fold('M150 128 q-6 22 -4 46 M250 128 q6 22 4 46', 2.4, 0.3);
   return pts[pts.length - 1];
 };
 const cuff = (sk, g, end, width, h = 7) => {
@@ -129,26 +183,41 @@ function backdrop(sk) {
   sk.defs.push(`<linearGradient id="${id}gold" x1="0" x2="1"><stop offset="0" stop-color="#8a6324"/><stop offset=".5" stop-color="#f1cf7a"/><stop offset="1" stop-color="#8a6324"/></linearGradient>`);
   sk.defs.push(`<linearGradient id="${id}ped" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#3a2a1c"/><stop offset="1" stop-color="#17100a"/></linearGradient>`);
   sk.raw(`<rect width="${VW}" height="${VH}" fill="url(#${id}bg)"/>`);
-  sk.raw(`<circle cx="200" cy="250" r="168" fill="none" stroke="url(#${id}gold)" stroke-width="2.2" opacity=".85"/>`);
+  sk.raw(`<circle cx="200" cy="250" r="168" fill="none" stroke="#f3c56b" stroke-width="9" opacity=".35" filter="url(#${id}b2)"/>`);
+  sk.raw(`<circle cx="200" cy="250" r="168" fill="none" stroke="url(#${id}gold)" stroke-width="2.2" opacity=".9"/>`);
   sk.raw(`<rect x="0" y="520" width="${VW}" height="80" fill="#1d130b" opacity=".55"/>`);
   sk.raw(`<path d="M76 548 v14 a124 20 0 0 0 248 0 v-14" fill="url(#${id}ped)"/>`);
   sk.raw(`<ellipse cx="200" cy="548" rx="124" ry="20" fill="#2c1f14" stroke="url(#${id}gold)" stroke-width="2.4"/>`);
+  sk.raw(`<ellipse cx="200" cy="548" rx="124" ry="20" fill="none" stroke="#f3c56b" stroke-width="6" opacity=".3" filter="url(#${id}b2)"/>`);
+  sk.raw(`<ellipse cx="200" cy="545" rx="58" ry="8" fill="#000" opacity=".55" filter="url(#${id}b2)"/>`);
 }
 
 function body(sk) {
   const skin = garment(sk, SKIN);
   // Gambe e braccia nude: i capi le coprono dove serve.
   sk.shape(pair([[163, 296], [166, 410], [170, 516, 'c'], [191, 516, 'c'], [194, 410], [199, 322, 'c']]), skin);
-  sleeve(sk, skin, 1, 22);
-  sk.shape(pair([[123, 292], [121, 310], [127, 326], [136, 324], [141, 306], [139, 292, 'c']]), skin);
   sk.shape(curve([[189, 84], [188, 122, 'c'], [212, 122, 'c'], [211, 84]]), skin);
+  sk.shadow('M188 84 Q200 100 212 84 L212 98 Q200 106 188 98 Z', 0.35);
   sk.shape(sym([[200, 112], [176, 116], [150, 126], [156, 200], [161, 300, 'c'], [200, 304]]), skin);
   return skin;
 }
 
+// Braccia nude (e mani se non sono in tasca): vanno sopra la maglia e sotto le maniche.
+function arms(sk, skin) {
+  sleeve(sk, skin, 1, 21, false);
+  if (ARM === ARMS.down) {
+    sk.shape(pair([[123, 292], [121, 310], [127, 326], [136, 324], [141, 306], [139, 292, 'c']]), skin);
+  } else {
+    // Polso che entra in tasca: un'ombra dove sparisce la mano.
+    sk.shadow('M152 286 q10 -4 18 4 l-2 8 q-8 -4 -16 -2 Z M248 286 q-10 -4 -18 4 l2 8 q8 -4 16 -2 Z', 0.45);
+  }
+}
+
 function head(sk, skin) {
-  sk.raw(`<ellipse cx="200" cy="58" rx="27" ry="34" fill="${skin.fill}"/>`);
-  sk.stroke('M188 92 Q200 98 212 92', darken(SKIN, 0.12), 1);
+  const id = sk.id;
+  sk.defs.push(`<radialGradient id="${id}hd" cx=".36" cy=".3" r=".8"><stop offset="0" stop-color="${css(lighten(SKIN, 0.35))}"/><stop offset=".45" stop-color="${css(SKIN)}"/><stop offset="1" stop-color="${css(darken(SKIN, 0.3))}"/></radialGradient>`);
+  sk.raw(`<path d="M200 24 C219 24 228 40 228 58 C228 80 216 94 200 94 C184 94 172 80 172 58 C172 40 181 24 200 24 Z" fill="url(#${id}hd)"/>`);
+  sk.raw(`<ellipse cx="190" cy="44" rx="7" ry="11" fill="#fff" opacity=".18" filter="url(#${id}b1)"/>`);
 }
 
 // ---------- capi ----------
@@ -165,7 +234,8 @@ function bottoms(sk, kind, g) {
   if (t.includes('bermuda')) { hem = 398; knee = [154, 197]; }
 
   if (t.includes('gonna')) {
-    sk.shape(sym([[200, waist], [158, waist, 'c'], [154, 320], [143, 408, 'c'], [200, 412]]), g);
+    sk.shape(sym([[200, waist], [158, waist, 'c'], [154, 320], [143, 408, 'c'], [200, 412]]), g, '', true);
+    sk.fold('M180 300 Q176 350 168 404 M220 300 Q224 350 232 404 M200 330 V406', 3, 0.28);
     sk.stroke('M158 290 H242', g.c, 1.1);
     sk.stroke('M176 300 L170 404 M224 300 L230 404', g.c, 1);
     return waist;
@@ -173,8 +243,16 @@ function bottoms(sk, kind, g) {
   const leg = t.includes('bermuda')
     ? [[158, waist, 'c'], [154, 320], [152, hem, 'c'], [197, hem, 'c'], [199, 328, 'c'], [200, waist, 'c']]
     : [[158, waist, 'c'], [155, 320], [knee[0], 410], [ankle[0], hem, 'c'], [ankle[1], hem, 'c'], [knee[1], 410], [200, 330, 'c'], [200, waist, 'c']];
-  sk.shape(pair(leg), g);
   sk.raw(`<rect x="158" y="${waist}" width="84" height="16" fill="${g.fill}"/>`);
+  sk.shape(pair(leg), g, '', true);
+  // Pieghe: inguine, ginocchia e caviglie (meno sui leggings).
+  const soft = t.includes('legging') ? 0.5 : 1;
+  sk.fold('M199 332 q-8 10 -18 14 M201 332 q8 10 18 14 M196 312 q-6 4 -14 4 M204 312 q6 4 14 4', 2.6, 0.3 * soft);
+  if (!t.includes('bermuda')) {
+    for (const x of [knee[0] + 8, VW - knee[1] + 8]) sk.fold(`M${x} 402 q10 5 20 0 M${x + 2} 414 q9 4 17 0`, 2.4, 0.3 * soft);
+    sk.fold(`M${ankle[0] + 2} ${hem - 14} q11 6 ${ankle[1] - ankle[0] - 4} 0 M${VW - ankle[1] + 2} ${hem - 14} q11 6 ${ankle[1] - ankle[0] - 4} 0`, 2.4, 0.32 * soft);
+    sk.fold(`M${knee[0] + 18} 330 L${knee[0] + 18} 520 M${VW - knee[0] - 18} 330 L${VW - knee[0] - 18} 520`, 5, 0.06);
+  }
   // Dettagli per tipo.
   if (t.includes('sportiv')) {
     sk.stroke('M157 296 L163 420 L166 506 M243 296 L237 420 L234 506', lighten(g.c, 0.6), 2.2);
@@ -187,6 +265,7 @@ function bottoms(sk, kind, g) {
     sk.stroke('M158 296 H242', g.c, 1.1);
     sk.stroke('M200 296 V326', g.c, 1.1);
     sk.stroke('M160 300 Q170 306 172 318 M240 300 Q230 306 228 318', g.c, 1);
+    sk.fold('M161 302 Q170 307 171 318 M239 302 Q230 307 229 318', 2.2, 0.35);
     if (t.includes('jeans')) {
       sk.stroke('M160 300 Q170 306 172 318 M240 300 Q230 306 228 318', '#d9a441', 0.9, 'stroke-dasharray="2 2"');
       sk.stroke('M156 330 L161 410 L167 518 M244 330 L239 410 L233 518', g.c, 0.9);
@@ -223,32 +302,34 @@ function shoes(sk, kind, g) {
     sk.raw(`<path d="${pair([[toe, 541, 'c'], [195, 539, 'c'], [195, 544, 'c'], [toe, 545, 'c']])}" fill="${css(soleC)}"/>`);
     if (t.includes('mocassin')) sk.stroke('M166 524 Q180 518 192 523 M234 524 Q220 518 208 523', dark, 1.2);
     else if (t.includes('stival')) sk.stroke('M181 492 V530 M219 492 V530', dark, 1);
-    else sk.stroke('M163 530 Q172 524 178 527 M237 530 Q228 524 222 527', '#ffffff', 1.4, 'opacity=".55"');
+    else sk.stroke('M163 530 Q172 524 178 527 M237 530 Q228 524 222 527', '#ffffff', 1.6, 'opacity=".65"');
+    sk.stroke('M170 516 Q180 514 190 516 M210 516 Q220 514 230 516', '#ffffff', 1.2, 'opacity=".3"');
   }
 }
 
 // Maglie e camicie. tucked = infilata nei pantaloni.
-function top(sk, kind, g, tucked) {
+function top(sk, kind, g, tucked, drawArms) {
   const t = String(kind).toLowerCase();
   const hem = tucked ? 292 : 304;
   const short = /t-shirt|polo|^top|maglia sportiva|camicetta/.test(t);
   const tank = t === 'top';
   const neckDeep = /cardigan/.test(t) ? 176 : 122;
-  if (!tank) {
-    const end = sleeve(sk, g, short ? 0.32 : 0.97, short ? 30 : 27);
-    if (!short) cuff(sk, g, end, 26, /felpa|maglione|cardigan|sportiva/.test(t) ? 10 : 7);
-  }
   if (/felpa/.test(t)) {
     // Cappuccio abbassato dietro il collo.
     sk.shape(sym([[200, 96], [182, 98], [168, 110], [164, 126, 'c'], [200, 126]]), garment(sk, darken(g.c, 0.12)));
+    sk.fold('M172 112 Q186 102 200 102 Q214 102 228 112', 3, 0.35);
   }
   const half = tank
     ? [[200, 128], [184, 112], [172, 118], [158, 150], [158, 200], [162, hem, 'c'], [200, hem + 2]]
     : [[200, neckDeep], [183, 112], [149, 125], [153, 175], [160, 240], [159, hem, 'c'], [200, hem + 2]];
-  sk.shape(sym(half), g);
+  sk.shape(sym(half), g, '', true);
   const c = g.c;
+  // Pieghe che partono dalle ascelle e verso la vita.
+  sk.fold('M156 176 Q170 190 178 214 M244 176 Q230 190 222 214', 3, 0.26);
+  sk.fold(`M172 ${hem - 40} Q176 ${hem - 20} 172 ${hem - 4} M228 ${hem - 40} Q224 ${hem - 20} 228 ${hem - 4}`, 2.6, 0.22);
   if (/camicia|camicetta/.test(t)) {
-    // Colletto, abbottonatura e bottoni.
+    // Colletto (con la sua ombra), abbottonatura e bottoni.
+    sk.shadow('M200 130 L184 114 L178 128 L184 140 Z M200 130 L216 114 L222 128 L216 140 Z', 0.45);
     const col = garment(sk, lighten(c, 0.06));
     sk.shape(curve([[200, 126, 'c'], [183, 110, 'c'], [176, 122], [182, 134, 'c']]) + curve([[200, 126, 'c'], [217, 110, 'c'], [224, 122], [218, 134, 'c']]), col);
     sk.stroke(`M200 126 V${hem}`, c, 1);
@@ -266,8 +347,11 @@ function top(sk, kind, g, tucked) {
     sk.stroke('M183 113 Q200 132 217 113', c, 2.2);
   }
   if (/felpa/.test(t)) {
+    // Tasca a marsupio con l'ombra dell'apertura e cordini del cappuccio.
+    sk.shadow('M176 252 L168 290 L172 290 L180 254 Z M224 252 L232 290 L228 290 L220 254 Z', 0.5);
     sk.stroke('M176 250 L224 250 L232 292 L168 292 Z', c, 1.1);
-    sk.stroke('M193 124 v26 M207 124 v26', lighten(c, 0.55), 1.4);
+    sk.stroke('M193 124 q-2 14 0 30 M207 124 q2 14 0 30', lighten(c, 0.6), 1.8);
+    sk.raw(`<g fill="${css(lighten(c, 0.7))}"><rect x="191" y="152" width="4" height="7" rx="1.5"/><rect x="205" y="152" width="4" height="7" rx="1.5"/></g>`);
   }
   if (/sportiva/.test(t)) {
     sk.stroke('M183 113 L156 128 M217 113 L244 128', c, 1.1);
@@ -279,16 +363,22 @@ function top(sk, kind, g, tucked) {
   if (/maglione/.test(t)) {
     for (let x = 172; x <= 228; x += 14) sk.stroke(`M${x} 140 Q${x + 4} 200 ${x} ${hem - 12}`, c, 0.8, 'opacity=".7"');
   }
-  sk.stroke('M151 128 Q156 150 154 172 M249 128 Q244 150 246 172', c, 0.8, 'opacity=".6"');
-  if (tucked) sk.stroke('M168 280 Q178 288 186 282 M232 280 Q222 288 214 282', c, 0.9);
+  if (tucked) sk.fold('M166 272 Q176 286 186 280 M234 272 Q224 286 214 280 M190 276 Q196 288 200 282', 2.6, 0.3);
+  if (drawArms) drawArms();
+  if (!tank) {
+    const end = sleeve(sk, g, short ? 0.32 : 0.97, short ? 30 : 27);
+    if (!short) cuff(sk, g, end, 26, /felpa|maglione|cardigan|sportiva/.test(t) ? 10 : 7);
+    else sk.fold('M137 176 q8 3 18 0 M263 176 q-8 3 -18 0', 2.4, 0.3);
+  }
 }
 
 function belt(sk, c) {
-  sk.raw(`<rect x="158" y="283" width="84" height="9" fill="${css(c)}"/><rect x="194" y="282" width="12" height="11" rx="1.5" fill="none" stroke="#c9a85a" stroke-width="2"/>`);
+  sk.shadow('M158 290 H242 V296 H158 Z', 0.4);
+  sk.raw(`<rect x="158" y="283" width="84" height="9" fill="${css(c)}"/><rect x="194" y="282" width="12" height="11" rx="1.5" fill="none" stroke="#c9a85a" stroke-width="2"/><rect x="158" y="283" width="84" height="2" fill="#fff" opacity=".15"/>`);
 }
 
 // Giacche e cappotti, aperti davanti per far vedere la maglia.
-function outer(sk, kind, g) {
+function outer(sk, kind, g, drawArms) {
   const t = String(kind).toLowerCase();
   const c = g.c;
   let hem = 312; let closed = false; let lapels = true; let quilt = false; let rib = false;
@@ -298,11 +388,11 @@ function outer(sk, kind, g) {
   if (/piumino/.test(t)) { hem = 300; closed = true; lapels = false; quilt = true; }
   if (/giubbotto/.test(t)) { hem = 298; closed = true; lapels = false; rib = true; }
   if (/jeans/.test(t)) { hem = 290; lapels = false; }
-  const end = sleeve(sk, g, 0.95, quilt ? 34 : 31);
-  if (rib || quilt) cuff(sk, g, end, 28, 9);
   const w = quilt ? 6 : 0;
+  // Ombra che la giacca proietta sui pantaloni.
+  sk.shadow(`M152 ${hem - 4} H248 V${hem + 8} H152 Z`, 0.45, 2);
   if (closed) {
-    sk.shape(sym([[200, 110], [181, 106], [144 - w, 123], [148 - w, 180], [151 - w, 250], [150 - w, hem, 'c'], [200, hem + 2]]), g);
+    sk.shape(sym([[200, 110], [181, 106], [144 - w, 123], [148 - w, 180], [151 - w, 250], [150 - w, hem, 'c'], [200, hem + 2]]), g, '', true);
     // Colletto alto e cerniera.
     sk.shape(curve([[178, 102], [200, 96], [222, 102], [224, 120, 'c'], [176, 120, 'c']]), garment(sk, darken(c, 0.06)));
     sk.stroke(`M200 104 V${hem}`, c, 1.6);
@@ -311,14 +401,20 @@ function outer(sk, kind, g) {
     const half = [[183, 110], [143, 123], [147, 180], [150, 250], [149, hem, 'c'], ...front.slice().reverse().map((p, i) => (i === 0 ? [p[0], p[1], 'c'] : p)), [190, 150]];
     // Metà sinistra e destra della giacca, con lo spazio davanti per la maglia.
     const right = half.map(mx);
-    sk.shape(curve(half) + curve(right), g);
+    sk.shape(curve(half), g, '', true);
+    sk.shape(curve(right), g, '', true);
+    // Ombra della giacca sulla maglia lungo l'apertura.
+    sk.shadow('M190 150 L193 300 L198 300 L196 150 Z M210 150 L207 300 L202 300 L204 150 Z', 0.35);
     if (lapels) {
+      sk.shadow(pair([[186, 112, 'c'], [200, 236, 'c'], [184, 170], [177, 146, 'c'], [185, 138, 'c'], [180, 128]]), 0.5);
       const lap = garment(sk, lighten(c, 0.07));
       sk.shape(pair([[184, 110, 'c'], [198, 232, 'c'], [180, 166], [173, 142, 'c'], [181, 134, 'c'], [176, 124]]), lap);
       sk.stroke('M184 110 L198 232 L180 166 L173 142 L181 134 M216 110 L202 232 L220 166 L227 142 L219 134', c, 0.9);
     }
     if (/blazer|cappotto/.test(t)) {
       sk.raw(`<circle cx="203" cy="246" r="2.6" fill="${line(c)}"/>`);
+      // Pieghe a X che tirano dal bottone.
+      sk.fold('M196 244 Q180 232 160 222 M204 244 Q220 232 240 222 M196 250 Q182 264 166 282 M204 250 Q218 264 234 282', 2.6, 0.28);
       if (/cappotto/.test(t)) sk.raw(`<circle cx="203" cy="290" r="2.6" fill="${line(c)}"/>`);
       sk.stroke('M160 270 h22 M240 270 h-22', c, 1.2);
       sk.stroke('M220 170 h14', c, 1.2);
@@ -345,18 +441,22 @@ function outer(sk, kind, g) {
     sk.stroke('M162 240 h24 v20 M238 240 h-24 v20', c, 1.2);
     sk.stroke('M183 104 Q200 84 217 104', c, 2);
   }
-  sk.stroke('M146 128 Q152 150 150 176 M254 128 Q248 150 250 176', c, 0.9, 'opacity=".7"');
+  if (closed) sk.fold('M200 106 V' + hem, 3, 0.25);
+  if (drawArms) drawArms();
+  const end = sleeve(sk, g, 0.95, quilt ? 34 : 31);
+  if (rib || quilt) cuff(sk, g, end, 28, 9);
 }
 
-function dress(sk, kind, g) {
+function dress(sk, kind, g, drawArms) {
   const t = String(kind).toLowerCase();
   const hem = /elegante/.test(t) ? 512 : 412;
   const flare = /elegante/.test(t) ? 144 : 138;
-  sleeve(sk, g, 0.3, 30);
-  sk.shape(sym([[200, 124], [183, 112], [150, 125], [155, 175], [163, 250], [158, 290], [flare, hem, 'c'], [200, hem + 4]]), g);
+  sk.shape(sym([[200, 124], [183, 112], [150, 125], [155, 175], [163, 250], [158, 290], [flare, hem, 'c'], [200, hem + 4]]), g, '', true);
   sk.stroke('M163 250 Q200 258 237 250', g.c, 1.1);
-  sk.stroke(`M180 262 L170 ${hem - 4} M220 262 L230 ${hem - 4}`, g.c, 0.9, 'opacity=".7"');
+  sk.fold(`M180 262 Q176 ${hem - 80} 168 ${hem - 4} M220 262 Q224 ${hem - 80} 232 ${hem - 4} M200 262 V${hem}`, 3.2, 0.3);
   sk.stroke('M183 113 Q200 134 217 113', g.c, 2);
+  if (drawArms) drawArms();
+  sleeve(sk, g, 0.3, 30);
 }
 
 function tie(sk, c) {
@@ -413,21 +513,22 @@ export function lookSvgMarkup(pieces, occasion) {
   const formalTop = /camicia|polo/.test(String(t.kind).toLowerCase());
   const tucked = formalTop && /eleganti|chino/.test(String(b.kind).toLowerCase()) && !isDress;
 
+  // Posa: mani in tasca come nei manichini di riferimento, braccia lungo il corpo per sport, gonne e vestiti.
+  const noPockets = isDress || /legging|gonna/.test(String(b.kind).toLowerCase()) || occasion === 'sport';
+  ARM = noPockets ? ARMS.down : ARMS.pocket;
+
   backdrop(sk);
   const skin = body(sk);
+  const drawArms = () => arms(sk, skin);
   if (isDress) {
     shoes(sk, s.kind, garment(sk, s.c, s.pattern, s.c2));
-    dress(sk, drKind || 'vestito', garment(sk, drC, dr.pattern, colorOf(dr.colors?.[1])));
+    dress(sk, drKind || 'vestito', garment(sk, drC, dr.pattern, colorOf(dr.colors?.[1])), drawArms);
   } else {
     bottoms(sk, b.kind, garment(sk, b.c, b.pattern, b.c2));
     shoes(sk, s.kind, garment(sk, s.c, s.pattern, s.c2));
-    if (tucked) {
-      top(sk, t.kind, garment(sk, t.c, t.pattern, t.c2), true);
-      const bl = accOf('cintura');
-      belt(sk, (bl && colorOf(bl.colors?.[0])) || colorOf(lum(s.c) < 0.2 ? 'nero' : 'marrone') || [90, 60, 40]);
-    } else {
-      top(sk, t.kind, garment(sk, t.c, t.pattern, t.c2), false);
-    }
+    const bl = accOf('cintura');
+    const beltC = (bl && colorOf(bl.colors?.[0])) || colorOf(lum(s.c) < 0.2 ? 'nero' : 'marrone');
+    top(sk, t.kind, garment(sk, t.c, t.pattern, t.c2), tucked, () => { if (tucked) belt(sk, beltC); drawArms(); });
   }
   const ti = accOf('cravatta');
   if (ti && !isDress) tie(sk, colorOf(ti.colors?.[0]) || [110, 25, 40]);
