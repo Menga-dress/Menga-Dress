@@ -1,31 +1,31 @@
 :root {
-  --bg: #f6f3ee;
-  --surface: #ffffff;
-  --ink: #1f1d1a;
-  --muted: #6d675f;
-  --line: #e2ddd5;
-  --accent: #8a5a3b;
-  --accent-ink: #ffffff;
-  --accent-soft: #f1e6dc;
-  --danger: #b3261e;
+  /* Tema scuro (manichino uomo) */
+  --bg: #161412;
+  --surface: #221f1c;
+  --ink: #f2eee8;
+  --muted: #a59d92;
+  --line: #36312c;
+  --accent: #d39a72;
+  --accent-ink: #1b1410;
+  --accent-soft: #3a2c22;
+  --danger: #f2b8b5;
   --radius: 14px;
   --tabbar-h: 64px;
-  color-scheme: light;
+  color-scheme: dark;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #161412;
-    --surface: #221f1c;
-    --ink: #f2eee8;
-    --muted: #a59d92;
-    --line: #36312c;
-    --accent: #d39a72;
-    --accent-ink: #1b1410;
-    --accent-soft: #3a2c22;
-    --danger: #f2b8b5;
-    color-scheme: dark;
-  }
+/* Tema chiaro avana (manichino donna) */
+:root[data-theme="donna"] {
+  --bg: #e6d5b8;
+  --surface: #f4ead8;
+  --ink: #2e2116;
+  --muted: #6f5a44;
+  --line: #d2bd9b;
+  --accent: #8a5a3b;
+  --accent-ink: #ffffff;
+  --accent-soft: #ead8bb;
+  --danger: #b3261e;
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; }

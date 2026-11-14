@@ -13,7 +13,7 @@ Il mio armadio digitale: fotografo i capi e ogni giorno l'app mi propone cosa in
 
 ## Come funzionano i consigli
 
-Ogni proposta mostra un manichino fotografico (creato con ChatGPT in colori pieni: giacca rossa, maglia verde, pantaloni blu, scarpe gialle) che l'app ricolora all'istante con i colori dei capi proposti, mantenendo pieghe e luci. Per aggiungerne uno: `python3 tools/manichino/prepara.py <immagine> web/img/manichino/<nome>` e farlo scegliere in `choosePhoto` dentro `web/js/look.js`. Se l'immagine non si carica resta il manichino disegnato in SVG.
+Ogni proposta mostra un manichino fotografico (creato con ChatGPT in colori pieni: giacca rossa, maglia verde, pantaloni blu, scarpe gialle) che l'app ricolora all'istante con i colori dei capi proposti, mantenendo pieghe e luci. Per aggiungerne uno: `python3 tools/manichino/prepara.py <immagine> web/img/manichino/<nome>` e farlo scegliere in `choosePhoto` dentro `web/js/look.js`. Se l'immagine non si carica resta il manichino disegnato in SVG. Tema chiaro (Impostazioni → Donna · chiaro): manichini `donna-*` (opzioni `--testa=122 --rosso-stretto --senza-riflesso`, `--rosso-maglia` per il top senza giacca).
 
 Lo stylist è in `web/js/stylist.js` e usa regole di stile, senza servizi esterni:
 

@@ -570,6 +570,18 @@ function choosePhoto(pieces, occasion) {
   for (const ch of seed) hash = (hash * 31 + ch.charCodeAt(0)) | 0;
   const pick = (list) => list[Math.abs(hash) % list.length];
   const tshirt = top && !/camicia/.test(top);
+  if (isDonna()) {
+    const dress = sub('dress');
+    const gown = dress && !/completo|tuta/.test(dress);
+    switch (occasion) {
+      case 'lavoro': return pick(['donna-lavoro', 'donna-lavoro2']);
+      case 'evento': return gown ? 'donna-vestito' : blazer ? 'donna-lavoro2' : 'donna-elegante';
+      case 'serata': return gown || !top ? 'donna-vestito' : 'donna-elegante';
+      case 'sport': return 'donna-sport';
+      case 'viaggio': return 'donna-viaggio';
+      default: return outer ? 'donna-casual' : pick(['donna-casual', 'donna-camicia']);
+    }
+  }
   switch (occasion) {
     case 'lavoro':
       if (tshirt || /jeans/.test(bottom)) return 'blazer-tshirt';
@@ -591,6 +603,11 @@ function choosePhoto(pieces, occasion) {
       if (outer) return 'casual';
       return pick(['felpa-zip', 'casual']);
   }
+}
+
+// Tema chiaro (Impostazioni): manichino donna.
+function isDonna() {
+  return document.documentElement.dataset.theme === 'donna';
 }
 
 // Giacca suggerita quando l'occasione la vuole ma la proposta non ne ha una.
@@ -629,13 +646,18 @@ function photoColors(pieces, occasion, base) {
   const outer = get('outerwear') || (suit ? dress : null);
   // Felpa aperta, camicia aperta e jogger: senza giacca il capo aperto è la maglia proposta,
   // e sotto c'è una t-shirt bianca (blu scuro se la maglia è già chiara).
-  const layered = !outer && ['felpa-zip', 'camicia-aperta', 'sport', 'viaggio', 'casual'].includes(base);
+  const layered = !outer && ['felpa-zip', 'camicia-aperta', 'sport', 'viaggio', 'casual',
+    'donna-casual', 'donna-camicia', 'donna-sport', 'donna-viaggio'].includes(base);
   const tee = colorOf(lum(top) > 0.8 ? 'blu navy' : 'bianco');
   // Blazer senza giacca proposta: blazer suggerito, grigio se la maglia è dello stesso colore.
   let jacket = outer;
-  if (!jacket && base.startsWith('blazer')) {
+  if (!jacket && /^blazer|^donna-lavoro/.test(base)) {
     jacket = colorOf(JACKET[occasion] || 'blu navy');
     if (Math.abs(lum(jacket) - lum(top)) < 0.12) jacket = colorOf('grigio');
+  }
+  // Vestito: il rosso dell'immagine è l'abito.
+  if (base === 'donna-vestito') {
+    return { 1: dress || top, 4: get('shoes') || colorOf(def.shoes[1]) };
   }
   return {
     // Completo e tuta: giacca e pantaloni dello stesso colore. Felpa, camicia o giubbotto aperti
@@ -658,6 +680,7 @@ function paintPhoto(canvas, { base, zone }, colors) {
     const a = zone[i + 2] / 255;
     if (!z || !a) continue;
     const c = tint[z];
+    if (!c) continue;
     const s = zone[i + 1] / 128; // 1 = colore pieno, meno = ombra, più = luce
     for (let k = 0; k < 3; k++) {
       const v = s <= 1 ? c[k] * s : c[k] + (255 - c[k]) * Math.min(1, (s - 1) * 0.8);
