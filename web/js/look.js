@@ -553,7 +553,20 @@ export function lookSvg(pieces, occasion) {
 // (giacca, maglia, pantaloni, scarpe) prende il colore del capo proposto mantenendo pieghe e luci.
 const PW = 640;
 const PH = 960;
-const PHOTO = { default: 'casual' };
+// Manichini disponibili (immagini di Luciano in colori pieni): l'app sceglie quello che somiglia
+// di più ai capi proposti.
+function choosePhoto(pieces, occasion) {
+  const def = DEFAULTS[occasion] || DEFAULTS.tempo_libero;
+  const sub = (cat) => String(pieces.find((p) => p.category === cat)?.subcategory || '').toLowerCase();
+  const outer = sub('outerwear');
+  const top = sub('top') || def.top[0].toLowerCase();
+  const shoes = sub('shoes') || def.shoes[0].toLowerCase();
+  if (/blazer|cappotto|trench/.test(outer) || /completo/.test(sub('dress'))) {
+    return /sneaker|corsa/.test(shoes) ? 'blazer-sneakers' : 'blazer';
+  }
+  if (!outer && /felpa|maglione|cardigan|maglia sportiva/.test(top)) return 'felpa';
+  return 'casual'; // giubbotto aperto su maglietta
+}
 const photos = {};
 function loadPhoto(name) {
   if (!photos[name]) {
@@ -623,7 +636,7 @@ export function lookView(pieces, occasion) {
   canvas.setAttribute('role', 'img');
   canvas.setAttribute('aria-label', 'Anteprima dell\'outfit sul manichino');
   box.append(canvas);
-  loadPhoto(PHOTO[occasion] || PHOTO.default)
+  loadPhoto(choosePhoto(pieces, occasion))
     .then((px) => paintPhoto(canvas, px, photoColors(pieces, occasion)))
     .catch(() => box.replaceChildren(lookSvg(pieces, occasion)));
   return box;
