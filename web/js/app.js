@@ -7,7 +7,7 @@ import {
   CATEGORIES, SEASONS, STYLES, PATTERNS, MOODS, OCCASIONS, FORMALITY, SUBTYPES, PALETTE, describeItem,
 } from './catalog.js';
 
-const APP_VERSION = '24'; // da aumentare a ogni modifica, si vede nelle Impostazioni
+const APP_VERSION = '25'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
 
@@ -552,6 +552,15 @@ async function renderProfile() {
 
 // ---------- Impostazioni ----------
 
+const THEMES = { uomo: 'Uomo · scuro', donna: 'Donna · chiaro' };
+
+function setTheme(t) {
+  document.documentElement.dataset.theme = t;
+  document.querySelector('meta[name="theme-color"]').content = t === 'donna' ? '#e6d5b8' : '#1f1d1a';
+  try { localStorage.setItem('menga-tema', t); } catch (e) { /* resta per questa sessione */ }
+  route(); // ridisegna l'anteprima con il manichino giusto
+}
+
 async function openSettings() {
   openDialog((close) => {
     const fileIn = h('input', { type: 'file', accept: 'application/json,.json', hidden: true });
@@ -589,6 +598,8 @@ async function openSettings() {
         h('button', { class: 'btn', type: 'button', onclick: doExport }, 'Scarica backup'),
         h('button', { class: 'btn', type: 'button', onclick: () => fileIn.click() }, 'Ripristina backup')),
       fileIn,
+      h('h2', {}, 'Tema e manichino'),
+      chipGroup(THEMES, document.documentElement.dataset.theme || 'uomo', { onChange: setTheme }),
       h('p', { class: 'hint' }, `Versione ${APP_VERSION}`),
     );
   });

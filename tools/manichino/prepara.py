@@ -8,6 +8,10 @@ scarpe gialle; tutto il resto è scuro. Da qui si ricavano:
                     B = copertura del capo (255 pieno, meno sui bordi)
 Uso: python3 tools/manichino/prepara.py tools/manichino/casual-maschera.png web/img/manichino/casual [--cerchio]
 Con --cerchio aggiunge il cerchio dorato dietro il manichino (per le immagini che non ce l'hanno).
+Con --testa=N toglie i capi sopra la riga N (capelli castani presi per giacca rossa).
+Con --rosso-stretto prende come rosso solo il rosso puro.
+Con --senza-riflesso non colora il riflesso delle scarpe (piedistallo col bordo dorato vicino).
+Con --rosso-maglia il rosso è la maglia e non la giacca (top monospalla senza giacca).
 """
 import sys
 import numpy as np
@@ -16,6 +20,7 @@ from PIL import Image, ImageFilter
 W, H = 640, 960
 src, out = sys.argv[1], sys.argv[2]
 ring = '--cerchio' in sys.argv[3:]
+red_top = '--rosso-maglia' in sys.argv[3:]
 im = Image.open(src).convert('RGB').resize((W, H), Image.LANCZOS)
 a = np.asarray(im).astype(np.float32) / 255
 mx, mn = a.max(2), a.min(2)
@@ -27,7 +32,9 @@ h = np.where(mx == r, ((g - b) / d) % 6, np.where(mx == g, (b - r) / d + 2, (r -
 
 zone = np.zeros((H, W), np.uint8)
 garment = (s > 0.35) & (v > 0.1)
-zone[garment & ((h < 25) | (h > 335))] = 1           # rosso: giacca
+# --rosso-stretto: solo rosso puro (capelli castani e bagliore arancio non sono giacca)
+RED = 14 if '--rosso-stretto' in sys.argv[3:] else 25
+zone[garment & ((h < RED) | (h > 335))] = 1          # rosso: giacca
 zone[garment & (h >= 75) & (h < 170)] = 2            # verde: maglia
 zone[garment & (h >= 200) & (h < 265)] = 3           # blu: pantaloni
 zone[garment & (h >= 40) & (h < 75)] = 4             # giallo: scarpe
@@ -64,7 +71,13 @@ for z in (1, 2, 3, 4):
 
 # Buchi dentro un capo (riflessi chiari del jeans, cuciture): li chiude se il pixel non è scuro
 # come il manichino.
-HUES = {1: ((h < 25) | (h > 335)), 2: ((h >= 75) & (h < 170)), 3: ((h >= 190) & (h < 270)), 4: ((h >= 28) & (h < 75))}
+HUES = {1: ((h < RED) | (h > 335)), 2: ((h >= 75) & (h < 170)), 3: ((h >= 190) & (h < 270)), 4: ((h >= 28) & (h < 75))}
+head = next((int(x.split('=')[1]) for x in sys.argv[3:] if x.startswith('--testa=')), 0)
+zone[:head] = 0
+if red_top:
+    zone[zone == 2] = 0
+    zone[zone == 1] = 2
+    HUES[2] = HUES[1]
 for z in (1, 2, 3, 4):
     k = 9 if z == 4 else 21  # scarpe: solo buchi piccoli (nappine, lacci), per non prendere il piedistallo
     m = Image.fromarray(((zone == z) * 255).astype(np.uint8))
@@ -74,7 +87,7 @@ for z in (1, 2, 3, 4):
 
 # Riflesso delle scarpe sul piedistallo: giallo meno saturo appena sotto le scarpe.
 ys, xs = np.nonzero(zone == 4)
-if len(ys):
+if len(ys) and '--senza-riflesso' not in sys.argv[3:]:
     near = np.zeros((H, W), bool)
     near[ys.max() - 30:min(H, ys.max() + 28), max(0, xs.min() - 6):xs.max() + 6] = True
     refl = near & (zone == 0) & (s > 0.4) & (v > 0.08) & (h >= 36) & (h < 72)
