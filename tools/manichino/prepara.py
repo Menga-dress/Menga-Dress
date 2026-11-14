@@ -52,16 +52,23 @@ def keep_big(mask, min_px):
             ys, xs = zip(*pix); keep[list(ys), list(xs)] = True
     return keep
 
+# Pezzi piccoli: restano se sono vicini al capo principale (polsini, nappine, gamba dietro la borsa),
+# altrimenti si scartano (fazzoletto nel taschino, riflessi del bordo dorato).
 for z in (1, 2, 3, 4):
     m = zone == z
-    zone[m & ~keep_big(m, 300 if z == 4 else 60)] = 0
+    big = keep_big(m, {3: 1500, 4: 300}.get(z, 60))
+    near = np.asarray(Image.fromarray((big * 255).astype(np.uint8)).filter(ImageFilter.MaxFilter(51))) > 0
+    small = m & ~big & keep_big(m & ~big, 20)
+    zone[m & ~big] = 0
+    zone[small & near] = z
 
 # Buchi dentro un capo (riflessi chiari del jeans, cuciture): li chiude se il pixel non è scuro
 # come il manichino.
-HUES = {1: ((h < 25) | (h > 335)), 2: ((h >= 75) & (h < 170)), 3: ((h >= 190) & (h < 270))}
-for z in (1, 2, 3):
+HUES = {1: ((h < 25) | (h > 335)), 2: ((h >= 75) & (h < 170)), 3: ((h >= 190) & (h < 270)), 4: ((h >= 28) & (h < 75))}
+for z in (1, 2, 3, 4):
+    k = 9 if z == 4 else 21  # scarpe: solo buchi piccoli (nappine, lacci), per non prendere il piedistallo
     m = Image.fromarray(((zone == z) * 255).astype(np.uint8))
-    closed = np.asarray(m.filter(ImageFilter.MaxFilter(21)).filter(ImageFilter.MinFilter(21))) > 0
+    closed = np.asarray(m.filter(ImageFilter.MaxFilter(k)).filter(ImageFilter.MinFilter(k))) > 0
     fill = closed & (zone == 0) & ((HUES[z] & (s > 0.2) & (v > 0.03)) | ((v > 0.18) & (s < 0.35)))
     zone[fill] = z
 
