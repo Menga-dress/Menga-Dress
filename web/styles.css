@@ -54,6 +54,11 @@ body {
   cursor: pointer; display: inline-flex;
 }
 .icon-btn:active { background: var(--line); }
+.topbar-actions { display: flex; align-items: center; gap: 4px; }
+/* Tasto uomo/donna: mostra il simbolo del manichino attivo, in oro */
+.gender-btn { color: var(--accent); }
+.gender-btn .g-donna, [data-theme="donna"] .gender-btn .g-uomo { display: none; }
+[data-theme="donna"] .gender-btn .g-donna { display: block; }
 
 main { padding: 16px; max-width: 720px; margin: 0 auto; outline: none; }
 

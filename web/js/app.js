@@ -7,7 +7,7 @@ import {
   CATEGORIES, SEASONS, STYLES, PATTERNS, MOODS, OCCASIONS, FORMALITY, SUBTYPES, PALETTE, describeItem,
 } from './catalog.js';
 
-const APP_VERSION = '25'; // da aumentare a ogni modifica, si vede nelle Impostazioni
+const APP_VERSION = '26'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
 
@@ -558,8 +558,23 @@ function setTheme(t) {
   document.documentElement.dataset.theme = t;
   document.querySelector('meta[name="theme-color"]').content = t === 'donna' ? '#e6d5b8' : '#1f1d1a';
   try { localStorage.setItem('menga-tema', t); } catch (e) { /* resta per questa sessione */ }
+  updateThemeBtn();
   route(); // ridisegna l'anteprima con il manichino giusto
 }
+
+// Tasto in alto: passa da uomo a donna e viceversa.
+const themeBtn = document.getElementById('theme-btn');
+function updateThemeBtn() {
+  const donna = document.documentElement.dataset.theme === 'donna';
+  themeBtn.setAttribute('aria-label', donna ? 'Passa al manichino uomo (tema scuro)' : 'Passa al manichino donna (tema chiaro)');
+  themeBtn.title = donna ? 'Donna · chiaro' : 'Uomo · scuro';
+}
+updateThemeBtn();
+themeBtn.addEventListener('click', () => {
+  const t = document.documentElement.dataset.theme === 'donna' ? 'uomo' : 'donna';
+  setTheme(t);
+  toast(t === 'donna' ? 'Manichino donna' : 'Manichino uomo');
+});
 
 async function openSettings() {
   openDialog((close) => {

@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#1f1d1a">
   <meta name="description" content="Il tuo armadio digitale con consigli di stile.">
   <title>Menga Dress</title>
-  <meta name="application-name" content="MengaDress">
+  <meta name="application-name" content="Menga Dress">
   <meta name="apple-mobile-web-app-title" content="Menga Dress">
   <link rel="manifest" href="manifest.webmanifest?v=3">
   <link rel="icon" href="icons/favicon-v3.png" type="image/png">
@@ -17,9 +17,15 @@
 <body>
   <header class="topbar">
     <h1 id="view-title">Menga Dress</h1>
+    <div class="topbar-actions">
+    <button id="theme-btn" class="icon-btn gender-btn" type="button">
+      <svg class="g-uomo" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="10" cy="14" r="5.5"/><path d="M14 10l6-6M15 4h5v5"/></g></svg>
+      <svg class="g-donna" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="9" r="5.5"/><path d="M12 14.5V22M8.5 18.5h7"/></g></svg>
+    </button>
     <button id="settings-btn" class="icon-btn" aria-label="Impostazioni">
       <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M19.4 13a7.6 7.6 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.4 7.4 0 0 0-1.7-1L15 3h-4l-.4 2.7a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.4 7.4 0 0 0 1.7 1L11 21h4l.4-2.7a7.4 7.4 0 0 0 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" transform="translate(-1 0)"/></svg>
     </button>
+    </div>
   </header>
 
   <main id="view" tabindex="-1"></main>
