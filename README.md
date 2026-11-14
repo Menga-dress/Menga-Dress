@@ -13,7 +13,7 @@ Il mio armadio digitale: fotografo i capi e ogni giorno l'app mi propone cosa in
 
 ## Come funzionano i consigli
 
-Ogni proposta mostra il manichino Menga Dress dell'occasione scelta (lavoro, tempo libero, serata, sport, viaggio, evento) con i colori dei capi proposti, disegnato all'istante sul telefono (nessuna rete, nessuna attesa).
+Ogni proposta mostra un manichino disegnato dall'app (SVG, senza ombre) con i capi proposti: forma per tipo di capo (camicia, felpa, blazer, jeans, sneakers...), colore e fantasia del capo vero, e i capi tipici dell'occasione dove manca qualcosa. Istantaneo, senza rete.
 
 Lo stylist è in `web/js/stylist.js` e usa regole di stile, senza servizi esterni:
 

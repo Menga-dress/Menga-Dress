@@ -186,5 +186,5 @@ dialog .sheet-head h2 { margin: 0; }
 .outfit .missing a { color: var(--accent); font-weight: 600; }
 
 .outfit .look { margin: 0 0 12px; }
-.outfit .look canvas { width: 100%; aspect-ratio: 2 / 3; border-radius: 12px; border: 1px solid var(--line); display: block; background: #3a2618; }
+.outfit .look svg { width: 100%; aspect-ratio: 2 / 3; border-radius: 12px; border: 1px solid var(--line); display: block; background: #3a2618; }
 .outfit .look figcaption { font-size: 11px; color: var(--muted); margin-top: 2px; }
