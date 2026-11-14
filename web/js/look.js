@@ -562,6 +562,8 @@ function choosePhoto(pieces, occasion) {
   const top = sub('top') || def.top[0].toLowerCase();
   const shoes = sub('shoes') || def.shoes[0].toLowerCase();
   if (/blazer|cappotto|trench/.test(outer) || /completo/.test(sub('dress'))) {
+    // Blazer su t-shirt/maglia o con i jeans: look smart casual.
+    if (!/camicia/.test(top) || /jeans/.test(sub('bottom'))) return 'blazer-tshirt';
     return /sneaker|corsa/.test(shoes) ? 'blazer-sneakers' : 'blazer';
   }
   if (!outer && /felpa|maglione|cardigan|maglia sportiva/.test(top)) return 'felpa';
