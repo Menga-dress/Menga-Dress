@@ -560,15 +560,26 @@ function choosePhoto(pieces, occasion) {
   const sub = (cat) => String(pieces.find((p) => p.category === cat)?.subcategory || '').toLowerCase();
   const outer = sub('outerwear');
   const top = sub('top') || def.top[0].toLowerCase();
+  const bottom = sub('bottom') || def.bottom[0].toLowerCase();
   const shoes = sub('shoes') || def.shoes[0].toLowerCase();
+  // Varietà: tra due manichini adatti, proposte diverse ne usano di diversi.
+  const seed = pieces.map((p) => p.id || p.subcategory || '').join('|');
+  let hash = 0;
+  for (const ch of seed) hash = (hash * 31 + ch.charCodeAt(0)) | 0;
+  const pick = (list) => list[Math.abs(hash) % list.length];
   if (/blazer|cappotto|trench/.test(outer) || /completo/.test(sub('dress'))) {
     // Blazer su t-shirt/maglia o con i jeans: look smart casual.
-    if (!/camicia/.test(top) || /jeans/.test(sub('bottom'))) return 'blazer-tshirt';
+    if (!/camicia/.test(top) || /jeans/.test(bottom)) return 'blazer-tshirt';
     return /sneaker|corsa/.test(shoes) ? 'blazer-sneakers' : 'blazer';
   }
-  if (!outer && /felpa|maglione|cardigan|maglia sportiva/.test(top)) return 'felpa';
-  return 'casual'; // giubbotto aperto su maglietta
+  if (/sportiv|legging/.test(bottom) || /tuta/.test(sub('dress'))) return 'sport'; // felpa aperta e jogger
+  if (outer) return 'casual'; // giubbotto aperto su maglietta
+  if (/felpa/.test(top)) return pick(['felpa', 'felpa-zip']);
+  if (/maglione|cardigan|maglia sportiva/.test(top)) return 'felpa';
+  if (/camicia/.test(top)) return 'camicia-aperta';
+  return 'casual';
 }
+
 const photos = {};
 function loadPhoto(name) {
   if (!photos[name]) {
@@ -593,17 +604,22 @@ function loadPhoto(name) {
 }
 
 // Colore per zona: 1 giacca, 2 maglia, 3 pantaloni, 4 scarpe.
-function photoColors(pieces, occasion) {
+function photoColors(pieces, occasion, base) {
   const def = DEFAULTS[occasion] || DEFAULTS.tempo_libero;
   const get = (cat) => colorOf(pieces.find((p) => p.category === cat)?.colors?.[0]);
   const dress = get('dress');
   const suit = /completo|tuta/i.test(pieces.find((p) => p.category === 'dress')?.subcategory || '');
   const top = get('top') || (suit ? null : dress) || colorOf(def.top[1]);
+  const outer = get('outerwear') || (suit ? dress : null);
+  // Felpa aperta, camicia aperta e jogger: senza giacca il capo aperto è la maglia proposta,
+  // e sotto c'è una t-shirt bianca (blu scuro se la maglia è già chiara).
+  const layered = !outer && ['felpa-zip', 'camicia-aperta', 'sport'].includes(base);
+  const tee = colorOf(lum(top) > 0.8 ? 'blu navy' : 'bianco');
   return {
-    // Completo e tuta: giacca e pantaloni dello stesso colore. Senza giacca proposta sembra una
-    // camicia aperta del colore della maglia.
-    1: get('outerwear') || (suit ? dress : top),
-    2: top,
+    // Completo e tuta: giacca e pantaloni dello stesso colore. Altrimenti senza giacca proposta
+    // sembra una camicia aperta del colore della maglia.
+    1: outer || top,
+    2: layered || (suit && !get('top')) ? tee : top,
     3: get('bottom') || dress || colorOf(def.bottom[1]),
     4: get('shoes') || colorOf(def.shoes[1]),
   };
@@ -638,8 +654,9 @@ export function lookView(pieces, occasion) {
   canvas.setAttribute('role', 'img');
   canvas.setAttribute('aria-label', 'Anteprima dell\'outfit sul manichino');
   box.append(canvas);
-  loadPhoto(choosePhoto(pieces, occasion))
-    .then((px) => paintPhoto(canvas, px, photoColors(pieces, occasion)))
+  const base = choosePhoto(pieces, occasion);
+  loadPhoto(base)
+    .then((px) => paintPhoto(canvas, px, photoColors(pieces, occasion, base)))
     .catch(() => box.replaceChildren(lookSvg(pieces, occasion)));
   return box;
 }

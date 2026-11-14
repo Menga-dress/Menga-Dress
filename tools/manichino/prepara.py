@@ -6,7 +6,8 @@ scarpe gialle; tutto il resto è scuro. Da qui si ricavano:
   - <nome>-zone.png R = zona (60 giacca, 120 maglia, 180 pantaloni, 240 scarpe),
                     G = luce del tessuto (128 = colore pieno, sotto ombra, sopra luce),
                     B = copertura del capo (255 pieno, meno sui bordi)
-Uso: python3 tools/manichino/prepara.py tools/manichino/casual-maschera.png web/img/manichino/casual
+Uso: python3 tools/manichino/prepara.py tools/manichino/casual-maschera.png web/img/manichino/casual [--cerchio]
+Con --cerchio aggiunge il cerchio dorato dietro il manichino (per le immagini che non ce l'hanno).
 """
 import sys
 import numpy as np
@@ -14,6 +15,7 @@ from PIL import Image, ImageFilter
 
 W, H = 640, 960
 src, out = sys.argv[1], sys.argv[2]
+ring = '--cerchio' in sys.argv[3:]
 im = Image.open(src).convert('RGB').resize((W, H), Image.LANCZOS)
 a = np.asarray(im).astype(np.float32) / 255
 mx, mn = a.max(2), a.min(2)
@@ -97,5 +99,25 @@ Image.fromarray(zpng).save(out + '-zone.png', optimize=True)
 # Base: dove c'è un capo resta solo la luce in grigio scuro (il colore lo mette l'app).
 gray = (v * 0.35)[..., None].repeat(3, 2)
 base = np.where((zone > 0)[..., None], gray, a)
+if ring:
+    from PIL import ImageDraw
+    # Sfondo = nero collegato ai bordi dell'immagine; tutto il resto (manichino, capi, piedistallo) sta davanti.
+    solid = (v > 0.05) | (zone > 0)
+    solid = np.asarray(Image.fromarray((solid * 255).astype(np.uint8)).filter(ImageFilter.MaxFilter(5))) > 0
+    m = Image.fromarray(np.where(solid, 0, 255).astype(np.uint8)).copy()
+    for seed in ((0, 0), (W - 1, 0), (0, H // 2), (W - 1, H // 2)):
+        if m.getpixel(seed) == 255:
+            ImageDraw.floodfill(m, seed, 128)
+    bg = np.asarray(m) == 128
+    bg = np.asarray(Image.fromarray((bg * 255).astype(np.uint8)).filter(ImageFilter.MinFilter(3))) > 0
+    # Cerchio come nelle altre immagini: centro sopra il bacino, raggio fino ai fianchi del busto.
+    cx, cy, r = W / 2, H * 0.377, W * 0.435
+    layer = Image.new('L', (W, H), 0)
+    ImageDraw.Draw(layer).ellipse([cx - r, cy - r, cx + r, cy + r], outline=255, width=2)
+    core = np.asarray(layer).astype(np.float32) / 255
+    glow = np.asarray(layer.filter(ImageFilter.GaussianBlur(6))).astype(np.float32) / 255
+    gold = np.array([0.93, 0.70, 0.38])
+    add = (core[..., None] * 0.8 + glow[..., None] * 0.6) * gold
+    base = np.where(bg[..., None], np.clip(base + add, 0, 1), base)
 Image.fromarray((base * 255).astype(np.uint8)).save(out + '.jpg', quality=88)
 print('ok', {z: int((zone == z).sum()) for z in (1, 2, 3, 4)})
