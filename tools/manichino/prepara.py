@@ -1,0 +1,84 @@
+"""Prepara il manichino dell'anteprima da un'immagine "maschera" a colori pieni.
+
+L'immagine (fatta con ChatGPT) ha i capi in colori puri: giacca rossa, maglia verde, pantaloni blu,
+scarpe gialle; tutto il resto è scuro. Da qui si ricavano:
+  - <nome>.jpg      la base: manichino e sfondo, con i capi resi grigi (solo luce e ombra)
+  - <nome>-zone.png R = zona (60 giacca, 120 maglia, 180 pantaloni, 240 scarpe),
+                    G = luce del tessuto (128 = colore pieno, sotto ombra, sopra luce),
+                    B = copertura del capo (255 pieno, meno sui bordi)
+Uso: python3 tools/manichino/prepara.py tools/manichino/casual-maschera.png web/img/manichino/casual
+"""
+import sys
+import numpy as np
+from PIL import Image, ImageFilter
+
+W, H = 640, 960
+src, out = sys.argv[1], sys.argv[2]
+im = Image.open(src).convert('RGB').resize((W, H), Image.LANCZOS)
+a = np.asarray(im).astype(np.float32) / 255
+mx, mn = a.max(2), a.min(2)
+v = mx
+s = np.where(mx > 1e-3, (mx - mn) / np.maximum(mx, 1e-3), 0)
+r, g, b = a[..., 0], a[..., 1], a[..., 2]
+d = np.maximum(mx - mn, 1e-6)
+h = np.where(mx == r, ((g - b) / d) % 6, np.where(mx == g, (b - r) / d + 2, (r - g) / d + 4)) * 60
+
+zone = np.zeros((H, W), np.uint8)
+garment = (s > 0.35) & (v > 0.1)
+zone[garment & ((h < 25) | (h > 335))] = 1           # rosso: giacca
+zone[garment & (h >= 75) & (h < 170)] = 2            # verde: maglia
+zone[garment & (h >= 200) & (h < 265)] = 3           # blu: pantaloni
+zone[garment & (h >= 40) & (h < 75)] = 4             # giallo: scarpe
+
+# Il bordo dorato del cerchio e del piedistallo è giallo-arancio ma poco saturo o sottile:
+# tieni solo le zone grandi (componenti connesse sopra una soglia).
+def keep_big(mask, min_px):
+    from collections import deque
+    lab = np.zeros(mask.shape, np.int32); keep = np.zeros(mask.shape, bool); n = 0
+    hh, ww = mask.shape
+    for y0, x0 in zip(*np.nonzero(mask)):
+        if lab[y0, x0]:
+            continue
+        n += 1; q = deque([(y0, x0)]); lab[y0, x0] = n; pix = []
+        while q:
+            y, x = q.popleft(); pix.append((y, x))
+            for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                yy, xx = y + dy, x + dx
+                if 0 <= yy < hh and 0 <= xx < ww and mask[yy, xx] and not lab[yy, xx]:
+                    lab[yy, xx] = n; q.append((yy, xx))
+        if len(pix) >= min_px:
+            ys, xs = zip(*pix); keep[list(ys), list(xs)] = True
+    return keep
+
+for z in (1, 2, 3, 4):
+    m = zone == z
+    zone[m & ~keep_big(m, 400)] = 0
+
+# Luce: luminosità rispetto al colore pieno della zona.
+shade = np.zeros((H, W), np.float32)
+for z in (1, 2, 3, 4):
+    m = zone == z
+    if m.any():
+        ref = np.percentile(v[m], 80)
+        shade[m] = v[m] / ref
+G = np.clip(shade * 128, 0, 255)
+
+# Copertura morbida sui bordi: più il pixel è saturo, più è capo.
+cover = np.clip((s - 0.2) / 0.3, 0, 1) * (zone > 0)
+# Allarga di un pixel la zona per coprire i bordi sfumati del disegno originale.
+zimg = Image.fromarray(zone * 60).filter(ImageFilter.MaxFilter(3))
+zone_d = np.asarray(zimg) // 60
+edge = (zone == 0) & (zone_d > 0) & (s > 0.15)
+cover = np.where(edge, np.clip((s - 0.12) / 0.4, 0, 1), cover)
+zone = np.where(edge, zone_d, zone)
+shade_e = np.where(edge, v / 0.8, 0)
+G = np.where(edge, np.clip(shade_e * 128, 0, 255), G)
+
+zpng = np.stack([zone * 60, G, cover * 255], 2).astype(np.uint8)
+Image.fromarray(zpng).save(out + '-zone.png', optimize=True)
+
+# Base: dove c'è un capo resta solo la luce in grigio scuro (il colore lo mette l'app).
+gray = (v * 0.35)[..., None].repeat(3, 2)
+base = np.where((zone > 0)[..., None], gray, a)
+Image.fromarray((base * 255).astype(np.uint8)).save(out + '.jpg', quality=88)
+print('ok', {z: int((zone == z).sum()) for z in (1, 2, 3, 4)})

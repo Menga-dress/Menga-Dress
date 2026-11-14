@@ -2,12 +2,12 @@ import * as db from './db.js';
 import { getWeather } from './weather.js';
 import { detectColors } from './colors.js';
 import { suggestOutfits, ideaName } from './stylist.js';
-import { lookSvg } from './look.js';
+import { lookView } from './look.js';
 import {
   CATEGORIES, SEASONS, STYLES, PATTERNS, MOODS, OCCASIONS, FORMALITY, SUBTYPES, PALETTE, describeItem,
 } from './catalog.js';
 
-const APP_VERSION = '18'; // da aumentare a ogni modifica, si vede nelle Impostazioni
+const APP_VERSION = '19'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
 
@@ -482,7 +482,7 @@ function paintResults(box, items) {
 
 // Anteprima: il manichino con i colori dei capi proposti, disegnato subito sul telefono.
 function lookBox(pieces) {
-  return h('figure', { class: 'look' }, lookSvg(pieces, outfitState.occasion), h('figcaption', {}, 'Anteprima dell\'outfit sul manichino'));
+  return h('figure', { class: 'look' }, lookView(pieces, outfitState.occasion), h('figcaption', {}, 'Anteprima dell\'outfit sul manichino'));
 }
 
 // Ricerca del capo online con la taglia del profilo.

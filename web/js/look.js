@@ -547,3 +547,84 @@ export function lookSvg(pieces, occasion) {
   wrap.innerHTML = lookSvgMarkup(pieces, occasion);
   return wrap.firstElementChild;
 }
+
+// ---------- manichino fotografico ----------
+// Base e zone ricavate da un'immagine a colori pieni (tools/manichino/prepara.py): ogni zona
+// (giacca, maglia, pantaloni, scarpe) prende il colore del capo proposto mantenendo pieghe e luci.
+const PW = 640;
+const PH = 960;
+const PHOTO = { default: 'casual' };
+const photos = {};
+function loadPhoto(name) {
+  if (!photos[name]) {
+    const load = (src) => new Promise((res, rej) => {
+      const img = new Image();
+      img.onload = () => res(img);
+      img.onerror = rej;
+      img.src = src;
+    });
+    const pixels = (img) => {
+      const c = document.createElement('canvas');
+      c.width = PW; c.height = PH;
+      const ctx = c.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(img, 0, 0, PW, PH);
+      return ctx.getImageData(0, 0, PW, PH).data;
+    };
+    photos[name] = Promise.all([load(`img/manichino/${name}.jpg`), load(`img/manichino/${name}-zone.png`)])
+      .then(([base, zone]) => ({ base: pixels(base), zone: pixels(zone) }))
+      .catch((e) => { delete photos[name]; throw e; });
+  }
+  return photos[name];
+}
+
+// Colore per zona: 1 giacca, 2 maglia, 3 pantaloni, 4 scarpe.
+function photoColors(pieces, occasion) {
+  const def = DEFAULTS[occasion] || DEFAULTS.tempo_libero;
+  const get = (cat) => colorOf(pieces.find((p) => p.category === cat)?.colors?.[0]);
+  const dress = get('dress');
+  const suit = /completo|tuta/i.test(pieces.find((p) => p.category === 'dress')?.subcategory || '');
+  const top = get('top') || (suit ? null : dress) || colorOf(def.top[1]);
+  return {
+    // Completo e tuta: giacca e pantaloni dello stesso colore. Senza giacca proposta sembra una
+    // camicia aperta del colore della maglia.
+    1: get('outerwear') || (suit ? dress : top),
+    2: top,
+    3: get('bottom') || dress || colorOf(def.bottom[1]),
+    4: get('shoes') || colorOf(def.shoes[1]),
+  };
+}
+
+function paintPhoto(canvas, { base, zone }, colors) {
+  const out = new ImageData(new Uint8ClampedArray(base), PW, PH);
+  const d = out.data;
+  // I colori molto scuri partono un po' più chiari, se no pieghe e luci non si vedono.
+  const tint = {};
+  for (const z in colors) tint[z] = colors[z].map((v) => Math.max(v, 34));
+  for (let i = 0; i < d.length; i += 4) {
+    const z = Math.round(zone[i] / 60);
+    const a = zone[i + 2] / 255;
+    if (!z || !a) continue;
+    const c = tint[z];
+    const s = zone[i + 1] / 128; // 1 = colore pieno, meno = ombra, più = luce
+    for (let k = 0; k < 3; k++) {
+      const v = s <= 1 ? c[k] * s : c[k] + (255 - c[k]) * Math.min(1, (s - 1) * 0.8);
+      d[i + k] = d[i + k] * (1 - a) + v * a;
+    }
+  }
+  canvas.getContext('2d').putImageData(out, 0, 0);
+}
+
+// Anteprima: manichino fotografico ricolorato; se l'immagine non si carica resta il disegno SVG.
+export function lookView(pieces, occasion) {
+  const box = document.createElement('div');
+  box.className = 'look-view';
+  const canvas = document.createElement('canvas');
+  canvas.width = PW; canvas.height = PH;
+  canvas.setAttribute('role', 'img');
+  canvas.setAttribute('aria-label', 'Anteprima dell\'outfit sul manichino');
+  box.append(canvas);
+  loadPhoto(PHOTO[occasion] || PHOTO.default)
+    .then((px) => paintPhoto(canvas, px, photoColors(pieces, occasion)))
+    .catch(() => box.replaceChildren(lookSvg(pieces, occasion)));
+  return box;
+}
