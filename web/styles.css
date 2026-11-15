@@ -205,3 +205,7 @@ dialog .login .btn.block { margin-top: 8px; }
 .login-logo { width: 72px; height: 72px; border-radius: 18px; }
 .login-sep { border-top: 1px solid var(--line); margin: 12px 0 4px; }
 dialog .account { margin-top: 16px; }
+
+.google-btn { display: flex; align-items: center; justify-content: center; gap: 10px; background: #fff; color: #1f1f1f; border-color: #dadce0; }
+.g-logo { display: inline-flex; }
+.login-or { text-align: center; color: var(--muted); font-size: 13px; margin: 14px 0 6px; }

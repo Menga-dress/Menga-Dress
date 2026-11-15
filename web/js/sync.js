@@ -5,7 +5,7 @@
 import * as db from './db.js';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 
-const LIB = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
+const LIB = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/+esm';
 const CONF_KEY = 'menga-supabase';
 const BUCKET = 'foto';
 const STORES = ['items', 'outfits'];
@@ -19,11 +19,27 @@ export function getConfig() {
   return null;
 }
 
+// Accetta anche indirizzi incollati con percorsi (/rest/v1/…), senza https o con spazi:
+// tiene solo https://<progetto>.supabase.co
+export function normalizeUrl(raw) {
+  let t = (raw || '').trim().replace(/\s+/g, '');
+  if (t && !/^[a-z]+:\/\//i.test(t)) t = 'https://' + t;
+  try {
+    const u = new URL(t);
+    const host = u.hostname.toLowerCase();
+    if (!/^[a-z0-9-]+\.supabase\.(co|in)$/.test(host)) return null;
+    return 'https://' + host;
+  } catch (e) { return null; }
+}
+
 export function setConfig(url, key) {
-  url = (url || '').trim().replace(/\/+$/, '');
-  key = (key || '').trim();
-  if (!/^https:\/\/[a-z0-9-]+\.supabase\.(co|in)$/i.test(url)) throw new Error('Indirizzo del progetto non valido (es. https://abcd.supabase.co)');
-  if (key.length < 20) throw new Error('Chiave non valida');
+  url = normalizeUrl(url);
+  key = (key || '').trim().replace(/\s+/g, '');
+  if (!url) throw new Error('Indirizzo del progetto non valido (es. https://abcd.supabase.co)');
+  if (/^sb_secret_/i.test(key)) throw new Error('Questa è la chiave segreta: usa quella "publishable" (sb_publishable_…) o "anon".');
+  if (!/^sb_publishable_[A-Za-z0-9_-]{10,}$/.test(key) && !/^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(key)) {
+    throw new Error('Chiave non valida: copia la chiave "publishable" (sb_publishable_…) o "anon" (eyJ…).');
+  }
   localStorage.setItem(CONF_KEY, JSON.stringify({ url, key }));
   clientPromise = null;
 }
@@ -42,7 +58,7 @@ export function client() {
   if (!cfg) return Promise.resolve(null);
   if (!clientPromise) {
     clientPromise = import(LIB).then(({ createClient }) => createClient(cfg.url, cfg.key, {
-      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: 'pkce' },
     })).catch((e) => { clientPromise = null; throw e; });
   }
   return clientPromise;
@@ -55,6 +71,7 @@ const ERRORS = [
   [/email not confirmed/i, 'Devi prima confermare l\'email: apri il link che ti è arrivato.'],
   [/already registered|already been registered/i, 'Esiste già un account con questa email: fai Accedi.'],
   [/password should be at least/i, 'La password deve avere almeno 6 caratteri.'],
+  [/provider is not enabled|unsupported provider/i, 'L\'accesso con Google non è ancora attivo nel progetto Supabase (Authentication → Providers → Google).'],
   [/rate limit|too many/i, 'Troppi tentativi, riprova tra qualche minuto.'],
   [/failed to fetch|network|load failed/i, 'Nessuna connessione a Supabase. Controlla internet (o il progetto è in pausa).'],
   [/unable to validate email|invalid format/i, 'Email non valida.'],
@@ -87,6 +104,16 @@ export async function signUp(email, password) {
   });
   if (error) throw error;
   return { user: data.user, needsConfirm: !data.session };
+}
+
+// Accesso con Google: porta alla pagina di Google e poi torna nell'app già dentro.
+export async function signInWithGoogle() {
+  const sb = await client();
+  const { error } = await sb.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: location.origin + location.pathname, queryParams: { prompt: 'select_account' } },
+  });
+  if (error) throw error;
 }
 
 export async function resetPassword(email) {

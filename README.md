@@ -32,8 +32,21 @@ Una volta sola:
 1. Crea un account gratuito su [supabase.com](https://supabase.com) e poi **New project** (piano Free, scegli una regione europea e una password per il database).
 2. Nel progetto apri **SQL Editor → New query**, incolla tutto il file [`supabase/setup.sql`](supabase/setup.sql) e premi **Run**. Crea la tabella dei dati e lo spazio privato per le foto, visibili solo a te.
 3. **Authentication → URL Configuration**: in *Site URL* metti `https://menga-dress.github.io/Menga-Dress/` (serve per i link di conferma email e di cambio password).
-4. **Project Settings → API** (o *Data API* / *API Keys*): copia **Project URL** e la chiave **anon** (o *publishable*).
+4. **Project Settings → API** (o *Data API* / *API Keys*): copia **Project URL** e la chiave **publishable** (`sb_publishable_…`, oppure la vecchia **anon** `eyJ…`; mai la *secret*). Se l'URL copiato finisce con `/rest/v1/` va bene lo stesso.
 5. Nell'app: ⚙️ → **Account** → incolla i due valori → **Collega**, poi **Registrati**. Arriva un'email di conferma: aprila e poi fai **Accedi**. In alternativa i due valori si possono scrivere in `web/js/config.js`, così valgono su ogni dispositivo senza incollarli.
+
+### Accesso con Google (facoltativo, gratis)
+
+1. Vai su [console.cloud.google.com](https://console.cloud.google.com), crea un progetto (es. "Menga Dress").
+2. **API e servizi → Schermata consenso OAuth** (o *Google Auth Platform*): tipo **Esterno**, nome app "Menga Dress", la tua email come supporto e contatto. Salva. In *Utenti di test* aggiungi la tua email (oppure premi **Pubblica app**).
+3. **API e servizi → Credenziali → Crea credenziali → ID client OAuth**: tipo **Applicazione web**.
+   - *Origini JavaScript autorizzate*: `https://menga-dress.github.io`
+   - *URI di reindirizzamento autorizzati*: `https://<il-tuo-progetto>.supabase.co/auth/v1/callback` (lo trovi già scritto in Supabase al passo 4, con il pulsante copia).
+   Premi **Crea** e copia **ID client** e **Client secret**.
+4. In Supabase: **Authentication → Sign In / Providers → Google** → attiva, incolla ID client e Client secret → **Save**.
+5. Controlla che in **Authentication → URL Configuration** il *Site URL* sia `https://menga-dress.github.io/Menga-Dress/`.
+
+Nell'app compare **Accedi con Google** nella schermata di accesso. Il Client secret resta solo in Supabase, mai nell'app.
 
 Come funziona: i dati restano prima di tutto sul telefono (IndexedDB) e l'app li copia nel cloud all'accesso, qualche secondo dopo ogni modifica e quando la riapri. Per ogni capo vince la versione modificata più di recente; le foto vanno nello storage privato `foto`. Senza accesso l'app funziona come prima.
 
