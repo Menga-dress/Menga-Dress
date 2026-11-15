@@ -3,11 +3,12 @@ import { getWeather } from './weather.js';
 import { detectColors } from './colors.js';
 import { suggestOutfits, ideaName } from './stylist.js';
 import { lookView } from './look.js';
+import * as sync from './sync.js';
 import {
   CATEGORIES, SEASONS, STYLES, PATTERNS, MOODS, OCCASIONS, FORMALITY, SUBTYPES, PALETTE, describeItem,
 } from './catalog.js';
 
-const APP_VERSION = '26'; // da aumentare a ogni modifica, si vede nelle Impostazioni
+const APP_VERSION = '27'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
 
@@ -606,19 +607,208 @@ async function openSettings() {
 
     return h('div', { class: 'sheet' },
       sheetHead('Impostazioni', close),
-      h('p', { class: 'hint' }, 'Menga Dress è gratuita: funziona tutta sul telefono, senza account né chiavi.'),
+      h('p', { class: 'hint' }, 'Menga Dress è gratuita: funziona tutta sul telefono. L\'account è facoltativo e serve solo per avere l\'armadio anche su altri dispositivi.'),
       h('h2', {}, 'Backup'),
       h('p', { class: 'hint' }, 'Armadio, outfit e profilo sono salvati solo su questo telefono. Scarica un backup ogni tanto per non perderli.'),
       h('div', { class: 'row' },
         h('button', { class: 'btn', type: 'button', onclick: doExport }, 'Scarica backup'),
         h('button', { class: 'btn', type: 'button', onclick: () => fileIn.click() }, 'Ripristina backup')),
       fileIn,
+      accountSection(close),
       h('h2', {}, 'Tema e manichino'),
       chipGroup(THEMES, document.documentElement.dataset.theme || 'uomo', { onChange: setTheme }),
       h('p', { class: 'hint' }, `Versione ${APP_VERSION}`),
     );
   });
 }
+
+// ---------- account e sincronizzazione ----------
+
+const fmtTime = (iso) => (iso ? new Date(iso).toLocaleString('it-IT', { dateStyle: 'short', timeStyle: 'short' }) : 'mai');
+
+async function runSync({ quiet = false } = {}) {
+  try {
+    const pulled = await sync.syncNow();
+    if (pulled) route();
+    if (!quiet) toast(pulled ? `Sincronizzato: ${pulled} novità` : 'Tutto sincronizzato');
+    return true;
+  } catch (e) {
+    console.warn('sync', e);
+    if (!quiet) toast('Sincronizzazione non riuscita: ' + sync.friendlyError(e));
+    return false;
+  }
+}
+
+// Schermata di accesso / registrazione. onDone viene chiamata dopo l'accesso.
+function openLogin({ first = false } = {}) {
+  let mode = 'in'; // 'in' accedi, 'up' registrati
+  openDialog((close) => {
+    const email = h('input', { type: 'email', autocomplete: 'email', inputmode: 'email', placeholder: 'nome@email.it', required: true });
+    const pass = h('input', { type: 'password', autocomplete: 'current-password', placeholder: 'almeno 6 caratteri', minlength: '6', required: true });
+    const msg = h('p', { class: 'error', role: 'alert' });
+    const info = h('p', { class: 'hint' });
+    const submit = h('button', { class: 'btn primary block', type: 'submit' });
+    const swap = h('button', { class: 'btn block', type: 'button' });
+    const forgot = h('button', { class: 'link-btn', type: 'button' }, 'Password dimenticata?');
+    const title = h('h2', {});
+
+    const paint = () => {
+      title.textContent = mode === 'in' ? 'Accedi' : 'Crea il tuo account';
+      submit.textContent = mode === 'in' ? 'Accedi' : 'Crea account';
+      swap.textContent = mode === 'in' ? 'Non hai un account? Registrati' : 'Hai già un account? Accedi';
+      pass.autocomplete = mode === 'in' ? 'current-password' : 'new-password';
+      forgot.hidden = mode !== 'in';
+      msg.textContent = '';
+    };
+    swap.addEventListener('click', () => { mode = mode === 'in' ? 'up' : 'in'; paint(); });
+
+    forgot.addEventListener('click', async () => {
+      msg.textContent = '';
+      if (!email.value.trim()) { msg.textContent = 'Scrivi prima la tua email.'; email.focus(); return; }
+      try {
+        await sync.resetPassword(email.value.trim());
+        info.textContent = 'Ti ho mandato un\'email: apri il link per scegliere una nuova password.';
+      } catch (e) { msg.textContent = sync.friendlyError(e); }
+    });
+
+    const form = h('form', { class: 'login-form' },
+      h('label', { class: 'field' }, h('span', {}, 'Email'), email),
+      h('label', { class: 'field' }, h('span', {}, 'Password'), pass),
+      msg, info, submit, forgot, h('div', { class: 'login-sep' }), swap);
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      msg.textContent = ''; info.textContent = '';
+      submit.disabled = true;
+      try {
+        if (mode === 'up') {
+          const { needsConfirm } = await sync.signUp(email.value.trim(), pass.value);
+          if (needsConfirm) {
+            info.textContent = 'Account creato! Ti ho mandato un\'email: apri il link di conferma, poi torna qui e fai Accedi.';
+            mode = 'in'; paint();
+            return;
+          }
+        } else {
+          await sync.signIn(email.value.trim(), pass.value);
+        }
+        close();
+        toast('Accesso fatto, sincronizzo l\'armadio…');
+        await runSync();
+      } catch (e) {
+        msg.textContent = sync.friendlyError(e);
+      } finally {
+        submit.disabled = false;
+      }
+    });
+
+    const skip = first ? h('button', { class: 'link-btn', type: 'button', onclick: () => {
+      try { localStorage.setItem('menga-skip-login', '1'); } catch (e) { /* niente */ }
+      close();
+    } }, 'Continua senza account') : null;
+
+    paint();
+    return h('div', { class: 'sheet login' },
+      first
+        ? h('div', { class: 'login-head' }, h('img', { src: 'icons/icon-192-v3.png', alt: '', class: 'login-logo' }), h('h1', {}, 'Menga Dress'))
+        : sheetHead('Account', close),
+      title,
+      h('p', { class: 'hint' }, 'Con l\'account il tuo armadio, gli outfit e il profilo si salvano anche online e li ritrovi su ogni dispositivo.'),
+      form,
+      skip);
+  });
+}
+
+function openNewPassword() {
+  openDialog((close) => {
+    const pass = h('input', { type: 'password', autocomplete: 'new-password', minlength: '6', required: true });
+    const msg = h('p', { class: 'error', role: 'alert' });
+    const form = h('form', {},
+      h('label', { class: 'field' }, h('span', {}, 'Nuova password'), pass), msg,
+      h('button', { class: 'btn primary block', type: 'submit' }, 'Salva password'));
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      try { await sync.updatePassword(pass.value); close(); toast('Password aggiornata'); runSync({ quiet: true }); } catch (e) { msg.textContent = sync.friendlyError(e); }
+    });
+    return h('div', { class: 'sheet' }, sheetHead('Scegli una nuova password', close), form);
+  });
+}
+
+function accountSection(closeSettings) {
+  const box = h('div', { class: 'account' }, h('h2', {}, 'Account'));
+  if (!sync.isConfigured()) {
+    const url = h('input', { type: 'text', placeholder: 'https://xxxx.supabase.co', autocomplete: 'off', spellcheck: 'false' });
+    const key = h('input', { type: 'text', placeholder: 'chiave anon / publishable', autocomplete: 'off', spellcheck: 'false' });
+    const msg = h('p', { class: 'error' });
+    box.append(
+      h('p', { class: 'hint' }, 'Per usare il login collega una volta il tuo progetto Supabase gratuito (Project Settings → API).'),
+      h('label', { class: 'field' }, h('span', {}, 'Project URL'), url),
+      h('label', { class: 'field' }, h('span', {}, 'Chiave anon'), key),
+      msg,
+      h('button', { class: 'btn', type: 'button', onclick: () => {
+        try { sync.setConfig(url.value, key.value); closeSettings(); initAccount(); openLogin(); } catch (e) { msg.textContent = e.message; }
+      } }, 'Collega'));
+    return box;
+  }
+  const status = h('p', { class: 'hint' }, 'Controllo l\'account…');
+  const actions = h('div', { class: 'row' });
+  box.append(status, actions);
+  sync.currentUser().then((user) => {
+    if (!user) {
+      status.textContent = 'Non hai fatto l\'accesso: l\'armadio è solo su questo telefono.';
+      actions.append(h('button', { class: 'btn primary', type: 'button', onclick: () => { closeSettings(); openLogin(); } }, 'Accedi o registrati'));
+    } else {
+      status.textContent = `Accesso come ${user.email}. Ultima sincronizzazione: ${fmtTime(sync.lastSync())}.`;
+      const now = h('button', { class: 'btn', type: 'button' }, 'Sincronizza ora');
+      now.addEventListener('click', async () => {
+        now.disabled = true;
+        await runSync();
+        now.disabled = false;
+        status.textContent = `Accesso come ${user.email}. Ultima sincronizzazione: ${fmtTime(sync.lastSync())}.`;
+      });
+      actions.append(now, h('button', { class: 'btn danger', type: 'button', onclick: async () => {
+        if (!confirm('Uscire dall\'account? L\'armadio resta su questo telefono.')) return;
+        await sync.signOut();
+        closeSettings();
+        toast('Sei uscito dall\'account');
+      } }, 'Esci'));
+    }
+  }).catch(() => { status.textContent = 'Supabase non raggiungibile (sei offline?).'; });
+  if (!sync.getConfig().fixed) {
+    box.append(h('button', { class: 'link-btn', type: 'button', onclick: async () => {
+      if (!confirm('Scollegare il progetto Supabase da questo telefono?')) return;
+      await sync.signOut().catch(() => {});
+      sync.clearConfig();
+      closeSettings();
+    } }, 'Scollega progetto Supabase'));
+  }
+  return box;
+}
+
+let accountReady = false;
+async function initAccount() {
+  if (!sync.isConfigured() || accountReady) return;
+  accountReady = true;
+  try {
+    await sync.onAuthChange((event) => { if (event === 'PASSWORD_RECOVERY') openNewPassword(); });
+    const user = await sync.currentUser();
+    if (user) {
+      runSync({ quiet: true });
+    } else if (!localStorage.getItem('menga-skip-login') && !/type=recovery/.test(location.hash)) {
+      openLogin({ first: true });
+    }
+  } catch (e) {
+    accountReady = false;
+    console.warn('account', e); // offline o Supabase in pausa: l'app funziona lo stesso
+  }
+}
+
+let syncTimer;
+window.addEventListener('menga-change', () => {
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(async () => { if (await sync.currentUser().catch(() => null)) runSync({ quiet: true }); }, 3000);
+});
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState === 'visible' && await sync.currentUser().catch(() => null)) runSync({ quiet: true });
+});
 
 // ---------- navigazione ----------
 
@@ -639,6 +829,7 @@ document.getElementById('settings-btn').addEventListener('click', openSettings);
 window.addEventListener('hashchange', route);
 route();
 db.askPersistence();
+initAccount();
 
 // Aggiornamenti: controlla subito se c'è una versione nuova (anche quando riapri l'app)
 // e, appena è installata, ricarica la pagina da sola.

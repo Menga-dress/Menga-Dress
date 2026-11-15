@@ -135,7 +135,7 @@ p.hint { color: var(--muted); margin: 4px 0 12px; font-size: 14px; }
 
 label.field { display: block; margin-bottom: 12px; font-size: 14px; color: var(--muted); }
 label.field > span { display: block; margin-bottom: 4px; }
-input[type=text], input[type=number], input[type=password], select, textarea {
+input[type=text], input[type=email], input[type=number], input[type=password], select, textarea {
   width: 100%; font: inherit; color: var(--ink); background: var(--bg);
   border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; min-height: 44px;
 }
@@ -193,3 +193,15 @@ dialog .sheet-head h2 { margin: 0; }
 .outfit .look { margin: 0 0 12px; }
 .outfit .look svg, .outfit .look canvas { width: 100%; aspect-ratio: 2 / 3; border-radius: 12px; border: 1px solid var(--line); display: block; background: #3a2618; }
 .outfit .look figcaption { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+/* Accesso / account */
+.link-btn {
+  background: none; border: 0; padding: 8px 0; color: var(--accent); font: inherit; font-size: 14px;
+  text-decoration: underline; cursor: pointer; display: block; margin: 4px auto 0;
+}
+dialog .login .btn.block { margin-top: 8px; }
+.login-head { text-align: center; margin: 4px 0 8px; }
+.login-head h1 { margin: 6px 0 0; font-size: 22px; }
+.login-logo { width: 72px; height: 72px; border-radius: 18px; }
+.login-sep { border-top: 1px solid var(--line); margin: 12px 0 4px; }
+dialog .account { margin-top: 16px; }
