@@ -2,14 +2,14 @@
 
 Il mio armadio digitale: fotografo i capi e ogni giorno l'app mi propone cosa indossare in base a umore, occasione e meteo.
 
-È una web app gratuita, installabile sul telefono e pubblicata con GitHub Pages. Non servono account, chiavi o abbonamenti: tutto funziona sul telefono e i dati restano lì.
+È una web app gratuita, installabile sul telefono e pubblicata con GitHub Pages. Non servono chiavi o abbonamenti: tutto funziona sul telefono. L'account è facoltativo e serve per avere l'armadio sincronizzato su più dispositivi (Supabase, piano gratuito).
 
 ## Sezioni
 
 - **Armadio**: aggiungi un capo con una foto (scatto o galleria). L'app riconosce da sola i colori; tu scegli categoria e tipo con un tocco, e formalità, stagioni e stili si compilano di conseguenza. Tutto si può correggere.
 - **Outfit**: scegli umore e occasione, l'app legge il meteo e propone 3 outfit fatti con i tuoi capi, con la spiegazione dell'abbinamento. Se ti manca qualcosa (o l'armadio è vuoto) propone lei il capo da prendere, con un link per cercarlo online nella tua taglia. "Altre proposte" ne genera di nuove; 👍/👎 e "Lo indosso oggi" migliorano le proposte successive.
 - **Profilo**: misure, taglie (anche per marca), stili e colori preferiti o da evitare, budget.
-- **Impostazioni** (icona in alto): backup e ripristino.
+- **Impostazioni** (icona in alto): account, backup e ripristino, tema.
 
 ## Come funzionano i consigli
 
@@ -25,6 +25,20 @@ Lo stylist è in `web/js/stylist.js` e usa regole di stile, senza servizi estern
 
 I colori della foto sono riconosciuti in `web/js/colors.js` analizzando la parte centrale dell'immagine.
 
+## Login e sincronizzazione (Supabase gratuito)
+
+Una volta sola:
+
+1. Crea un account gratuito su [supabase.com](https://supabase.com) e poi **New project** (piano Free, scegli una regione europea e una password per il database).
+2. Nel progetto apri **SQL Editor → New query**, incolla tutto il file [`supabase/setup.sql`](supabase/setup.sql) e premi **Run**. Crea la tabella dei dati e lo spazio privato per le foto, visibili solo a te.
+3. **Authentication → URL Configuration**: in *Site URL* metti `https://menga-dress.github.io/Menga-Dress/` (serve per i link di conferma email e di cambio password).
+4. **Project Settings → API** (o *Data API* / *API Keys*): copia **Project URL** e la chiave **anon** (o *publishable*).
+5. Nell'app: ⚙️ → **Account** → incolla i due valori → **Collega**, poi **Registrati**. Arriva un'email di conferma: aprila e poi fai **Accedi**. In alternativa i due valori si possono scrivere in `web/js/config.js`, così valgono su ogni dispositivo senza incollarli.
+
+Come funziona: i dati restano prima di tutto sul telefono (IndexedDB) e l'app li copia nel cloud all'accesso, qualche secondo dopo ogni modifica e quando la riapri. Per ogni capo vince la versione modificata più di recente; le foto vanno nello storage privato `foto`. Senza accesso l'app funziona come prima.
+
+Limiti del piano gratuito: 500 MB di database e 1 GB di foto (migliaia di capi). Se il progetto resta **7 giorni senza uso** Supabase lo mette in pausa: si riattiva con un clic dalla dashboard, nel frattempo l'app funziona offline.
+
 ## Primo avvio
 
 1. GitHub Pages pubblica `web/` a ogni modifica su `main`: `https://mizral86.github.io/Menga-Dress/`.
@@ -34,6 +48,7 @@ I colori della foto sono riconosciuti in `web/js/colors.js` analizzando la parte
 
 - HTML, CSS e JavaScript senza passaggi di build, nella cartella `web/`.
 - Dati in IndexedDB sul dispositivo; il backup scarica un file JSON con anche le foto.
+- Account e sincronizzazione in `web/js/sync.js` (libreria `@supabase/supabase-js` caricata dal CDN jsDelivr solo se il progetto è collegato).
 - Meteo da [Open-Meteo](https://open-meteo.com), gratuito e senza chiave.
 
 Per provarla in locale: `cd web && python3 -m http.server 8000` e apri `http://localhost:8000`.

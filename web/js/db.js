@@ -38,12 +38,39 @@ export const newId = () =>
 
 export const getAll = (store) => run(store, 'readonly', (s) => s.getAll());
 export const get = (store, id) => run(store, 'readonly', (s) => s.get(id));
-export const put = (store, value) => run(store, 'readwrite', (s) => s.put(value));
-export const remove = (store, id) => run(store, 'readwrite', (s) => s.delete(id));
 export const clear = (store) => run(store, 'readwrite', (s) => s.clear());
-
 export const getKV = (key) => run('kv', 'readonly', (s) => s.get(key));
-export const setKV = (key, value) => run('kv', 'readwrite', (s) => s.put(value, key));
+
+// Versioni "grezze": le usa la sincronizzazione per scrivere senza segnare modifiche locali.
+export const rawPut = (store, value) => run(store, 'readwrite', (s) => s.put(value));
+export const rawRemove = (store, id) => run(store, 'readwrite', (s) => s.delete(id));
+export const rawSetKV = (key, value) => run('kv', 'readwrite', (s) => s.put(value, key));
+
+// Ogni modifica fatta dall'utente porta l'ora (_mod), così la sincronizzazione sa qual è
+// la versione più recente; le cancellazioni lasciano una "lapide" per propagarle.
+const changed = () => window.dispatchEvent(new Event('menga-change'));
+
+export async function put(store, value) {
+  value._mod = new Date().toISOString();
+  await rawPut(store, value);
+  changed();
+}
+
+export async function remove(store, id) {
+  await rawRemove(store, id);
+  const t = (await getKV('tombstones')) || {};
+  t[store + ':' + id] = new Date().toISOString();
+  await rawSetKV('tombstones', t);
+  changed();
+}
+
+export async function setKV(key, value) {
+  await rawSetKV(key, value);
+  if (key === 'profile') {
+    await rawSetKV('profile_mod', new Date().toISOString());
+    changed();
+  }
+}
 
 // Chiede al browser di non cancellare i dati quando lo spazio scarseggia.
 export async function askPersistence() {
