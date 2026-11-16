@@ -10,7 +10,7 @@ import {
   mannequinMatch, currentGender,
 } from './catalog.js';
 
-const APP_VERSION = '30'; // da aumentare a ogni modifica, si vede nelle Impostazioni
+const APP_VERSION = '31'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
 
