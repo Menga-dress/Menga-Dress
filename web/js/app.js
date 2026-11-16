@@ -10,7 +10,7 @@ import {
   mannequinMatch, currentGender,
 } from './catalog.js';
 
-const APP_VERSION = '32'; // da aumentare a ogni modifica, si vede nelle Impostazioni
+const APP_VERSION = '33'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
 
@@ -98,6 +98,55 @@ function chipGroup(options, selected, { multiple = false, scroll = false, onChan
   return wrap;
 }
 
+// ---------- nuovi manichini ----------
+// Zona a colori pieni in cui va disegnato il capo, come negli altri manichini.
+const ZONE_COLOR = { outerwear: 'ROSSO puro', dress: 'ROSSO puro', top: 'VERDE puro', bottom: 'BLU puro', shoes: 'GIALLO puro', accessory: 'ROSSO puro' };
+const EN = {
+  Polo: 'a polo shirt', Camicetta: 'a blouse', Top: 'a top', Felpa: 'a hoodie', Maglione: 'a knitted sweater', Cardigan: 'a cardigan',
+  'Maglia sportiva': 'an athletic top', 'Camicia elegante': 'a formal shirt', Camicia: 'a shirt', 'T-shirt': 'a t-shirt',
+  Jeans: 'jeans', Chino: 'chino trousers', 'Pantaloni eleganti': 'tailored trousers', 'Pantaloni sportivi': 'jogger pants', Cargo: 'cargo pants',
+  Bermuda: 'bermuda shorts', Gonna: 'a skirt', Leggings: 'leggings', Vestito: 'a dress', 'Abito elegante': 'an evening gown', Completo: 'a suit', Tuta: 'a tracksuit',
+  Giubbotto: 'a bomber jacket', 'Giacca di jeans': 'a denim jacket', Blazer: 'a blazer', Trench: 'a trench coat', Cappotto: 'a long wool coat',
+  Piumino: 'a puffer jacket', Impermeabile: 'a rain jacket', Sneakers: 'sneakers', 'Scarpe da corsa': 'running shoes', Mocassini: 'loafers',
+  'Scarpe eleganti': 'oxford dress shoes', Stivaletti: 'chelsea boots', Sandali: 'sandals', 'Décolleté': 'high heel pumps',
+  Cintura: 'a belt', Borsa: 'a handbag', Sciarpa: 'a scarf', Cappello: 'a hat', Cravatta: 'a necktie',
+};
+
+function newMannequinPrompt(category, name) {
+  const donna = currentGender() === 'donna';
+  const what = EN[name] || name;
+  const zone = ZONE_COLOR[category] || 'ROSSO puro';
+  return [
+    `Crea un'immagine verticale 2:3, figura intera, di un manichino ${donna ? 'femminile' : 'maschile'} nero lucido senza volto, in piedi su un piedistallo nero, sfondo nero con un sottile cerchio dorato dietro.`,
+    `Il manichino indossa ${articolo(name)} (${what}), in tinta unita ${zone}, senza fantasie né scritte.`,
+    'Gli altri capi in tinta unita a colori pieni: giacca ROSSO puro (se c\'è), maglia VERDE puro, pantaloni BLU puro, scarpe GIALLO puro.',
+    'Luce morbida da studio, pieghe del tessuto visibili, nessun altro oggetto.',
+  ].join(' ');
+}
+
+function showNewMannequin(category, name) {
+  const prompt = newMannequinPrompt(category, name);
+  openDialog((close) => h('div', { class: 'sheet' },
+    sheetHead(`Nuovo manichino: ${name}`, close),
+    h('p', {}, `I manichini ${currentGender()} non hanno ${articolo(name)}. Puoi crearne uno con ChatGPT (o un'altra app di immagini) e mandarlo in chat: lo preparo e lo aggiungo all'app.`),
+    h('ol', { class: 'steps' },
+      h('li', {}, 'Copia il testo qui sotto e incollalo in ChatGPT.'),
+      h('li', {}, `Controlla che ${articolo(name)} sia di un solo colore pieno (${ZONE_COLOR[category] || 'ROSSO puro'}), come gli altri capi.`),
+      h('li', {}, 'Mandami l\'immagine nella chat di Menga Dress.')),
+    h('textarea', { class: 'prompt', readonly: true, rows: 7 }, prompt),
+    h('div', { class: 'row end' },
+      h('button', {
+        type: 'button', class: 'btn primary',
+        onclick: async () => {
+          try { await navigator.clipboard.writeText(prompt); toast('Testo copiato'); } catch { toast('Tieni premuto sul testo per copiarlo'); }
+        },
+      }, 'Copia il testo'))));
+}
+
+function newMannequinButton(category, name) {
+  return h('div', {}, h('button', { type: 'button', class: 'btn small', onclick: () => showNewMannequin(category, name) }, 'Come creare il manichino'));
+}
+
 // Distanza tra due colori come la vede l'occhio (Lab).
 function labDistance(a, b) {
   const lab = ([r, g, bl]) => {
@@ -181,7 +230,13 @@ async function renderWardrobe() {
     // Capi che i manichini non hanno uguali: segnalati con un bollino.
     const missing = shown.filter((it) => mannequinMatch(it.category, it.subcategory)?.same === false);
     if (missing.length) {
-      view.append(h('p', { class: 'hint' }, `⚠ ${missing.length} ${missing.length === 1 ? 'capo non ha' : 'capi non hanno'} lo stesso capo sui manichini ${currentGender() === 'donna' ? 'donna' : 'uomo'}: toccali per vedere come appaiono.`));
+      const kinds = [...new Map(missing.map((it) => [`${it.category}|${it.subcategory}`, it])).values()];
+      view.append(h('div', { class: 'match warn' },
+        h('strong', {}, `⚠ Manichini da creare (${currentGender() === 'donna' ? 'donna' : 'uomo'})`),
+        `${missing.length} ${missing.length === 1 ? 'capo non ha' : 'capi non hanno'} lo stesso capo sui manichini. Tocca un tipo per sapere come creare il manichino:`,
+        h('div', { class: 'chips' }, kinds.map((it) => h('button', {
+          type: 'button', class: 'chip', onclick: () => showNewMannequin(it.category, it.subcategory),
+        }, it.subcategory)))));
     }
     const tile = (it) => {
       const m = mannequinMatch(it.category, it.subcategory);
@@ -289,12 +344,15 @@ function editItem(item, { isNew = false } = {}) {
       } else if (m.same) {
         box = h('div', { class: 'match ok' }, h('strong', {}, `✓ Sui manichini: ${m.garment}`),
           `I ${who} hanno lo stesso capo, l'anteprima lo mostra col suo colore.`);
-      } else if (m.garment) {
-        box = h('div', { class: 'match warn' }, h('strong', {}, `⚠ I ${who} non hanno ${articolo(name)}`),
-          `Nell'anteprima apparirà come il capo più simile: ${m.garment}.`);
       } else {
-        box = h('div', { class: 'match warn' }, h('strong', {}, `⚠ I ${who} non hanno ${articolo(name)}`),
-          'Nessun capo simile: nell\'anteprima non comparirà.');
+        box = h('div', { class: 'match warn' }, h('strong', {}, `⚠ Serve un nuovo manichino: i ${who} non hanno ${articolo(name)}`),
+          m.garment ? `Per ora nell'anteprima appare come il capo più simile: ${m.garment}.` : 'Per ora nell\'anteprima non compare.',
+          newMannequinButton(category, name));
+      }
+      // Fantasie che il manichino non sa ridisegnare.
+      const pat = f.pattern.value;
+      if (['floral', 'printed', 'other'].includes(pat)) {
+        box.append(h('p', { class: 'match-note' }, `La fantasia "${PATTERNS[pat]}" non si può ridisegnare sul manichino: usa il colore principale${m?.same ? '. Se ti serve proprio, crea un manichino con questo capo.' : '.'}`));
       }
       matchSlot.replaceChildren(box);
       paintMannequin();
@@ -305,10 +363,10 @@ function editItem(item, { isNew = false } = {}) {
     const paintMannequin = () => {
       const name = f.subcategory.value.trim();
       const colors = f.colors.value.split(',').map((x) => x.trim()).filter(Boolean);
-      const key = [category, name, colors[0], currentGender()].join('|');
+      const key = [category, name, colors.join(','), f.pattern.value, currentGender()].join('|');
       if (key === lastLook) return;
       lastLook = key;
-      const g = category && name ? garmentView(category, name, colors) : null;
+      const g = category && name ? garmentView(category, name, colors, f.pattern.value) : null;
       if (!g) {
         mannequinSlot.replaceChildren(h('div', { class: 'pair-empty' },
           category && name ? 'Questo capo non compare sui manichini' : 'Scegli il tipo per vederlo sul manichino'));
@@ -400,6 +458,7 @@ function editItem(item, { isNew = false } = {}) {
       }));
     };
     f.colors.addEventListener('input', () => { paintColorChips(); paintMannequin(); });
+    f.pattern.addEventListener('change', () => { paintMatch(); });
     paintColorChips();
 
     // I colori si aggiornano da soli solo finché l'utente non li tocca.

@@ -142,6 +142,11 @@ p.hint { color: var(--muted); margin: 4px 0 12px; font-size: 14px; }
 .pair figcaption { font-size: 12px; color: var(--muted); margin-top: 4px; text-align: center; }
 .pair-look canvas { width: 100%; aspect-ratio: 2 / 3; border-radius: 12px; border: 1px solid var(--line); display: block; background: #000; }
 .pair-empty { aspect-ratio: 2 / 3; border-radius: 12px; border: 1px dashed var(--line); display: flex; align-items: center; justify-content: center; text-align: center; padding: 12px; color: var(--muted); font-size: 13px; }
+.match .btn.small { margin-top: 8px; padding: 6px 12px; font-size: 13px; }
+.match-note { margin: 8px 0 0; font-size: 13px; }
+.match .chips { margin-top: 8px; }
+.steps { padding-left: 20px; margin: 8px 0 12px; line-height: 1.5; }
+textarea.prompt { width: 100%; font-size: 13px; line-height: 1.4; box-sizing: border-box; }
 .tile-warn {
   position: absolute; top: 6px; right: 6px; width: 24px; height: 24px; border-radius: 50%;
   background: #e0a526; color: #1b1410; font-size: 13px; line-height: 24px; text-align: center;

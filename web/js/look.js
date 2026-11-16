@@ -666,14 +666,86 @@ function photoColors(pieces, occasion, base) {
   if (base === 'donna-vestito') {
     return { 1: dress || top, 4: get('shoes') || colorOf(def.shoes[1]) };
   }
+  const piece = (cat) => pieces.find((p) => p.category === cat);
+  const dressP = piece('dress');
+  // Seconda tinta e fantasia del capo vero che occupa la zona (se c'è).
+  const withDetail = (c, p) => (p && c ? { c, c2: colorOf(p.colors?.[1]), pattern: p.pattern } : c);
+  const zone1 = piece('outerwear') || (suit ? dressP : jacket ? null : piece('top'));
+  const zone2 = layered || (suit && !get('top')) ? null : piece('top') || (suit ? null : dressP);
   return {
     // Completo e tuta: giacca e pantaloni dello stesso colore. Felpa, camicia o giubbotto aperti
     // senza giacca proposta prendono il colore della maglia, con una t-shirt sotto.
-    1: jacket || top,
-    2: layered || (suit && !get('top')) ? tee : top,
-    3: get('bottom') || dress || colorOf(def.bottom[1]),
-    4: get('shoes') || colorOf(def.shoes[1]),
+    1: withDetail(jacket || top, zone1),
+    2: withDetail(layered || (suit && !get('top')) ? tee : top, zone2),
+    3: withDetail(get('bottom') || dress || colorOf(def.bottom[1]), piece('bottom') || dressP),
+    4: withDetail(get('shoes') || colorOf(def.shoes[1]), piece('shoes')),
   };
+}
+
+// Suola delle scarpe: in ogni colonna la scarpa va dall'alto fin dove il tessuto diventa di colpo
+// più scuro (sotto c'è il riflesso sul piedistallo); il bordo si ammorbidisce con le colonne vicine.
+// Calcolata una volta per immagine.
+const soles = new WeakMap();
+function soleMask(zone) {
+  if (soles.has(zone)) return soles.get(zone);
+  const at = (x, y) => (y * PW + x) * 4;
+  const isShoe = (x, y) => Math.round(zone[at(x, y)] / 60) === 4 && zone[at(x, y) + 2] > 60;
+  const top = new Int16Array(PW).fill(-1);
+  const end = new Int16Array(PW).fill(-1);
+  for (let x = 0; x < PW; x++) {
+    let y = 0;
+    while (y < PH && !isShoe(x, y)) y++;
+    if (y >= PH) continue;
+    top[x] = y;
+    const run = [];
+    let low = 0; let last = y;
+    for (; y < PH && isShoe(x, y); y++) {
+      const g = zone[at(x, y) + 1];
+      run.push(g);
+      const med = run.slice().sort((a, b) => a - b)[run.length >> 1];
+      low = run.length > 12 && g < 0.8 * med ? low + 1 : 0;
+      if (low >= 4) { last = y - 4; break; }
+      last = y;
+    }
+    end[x] = last;
+  }
+  const bottom = new Int16Array(PW).fill(-1);
+  for (let x = 0; x < PW; x++) {
+    if (end[x] < 0) continue;
+    const w = [];
+    for (let k = Math.max(0, x - 15); k <= Math.min(PW - 1, x + 15); k++) if (end[k] >= 0) w.push(end[k]);
+    w.sort((a, b) => a - b);
+    bottom[x] = w[w.length >> 1];
+  }
+  const m = { bottom, top };
+  soles.set(zone, m);
+  return m;
+}
+
+// Colore del tessuto nel punto (x, y): tinta unita, righe, quadri o pois con la seconda tinta;
+// per le scarpe la seconda tinta è la suola.
+function fabric(spec, x, y, z, sole) {
+  if (Array.isArray(spec)) return spec;
+  const { c, c2, pattern } = spec;
+  const ink = c2 || (lum(c) > 0.55 ? darken(c, 0.45) : lighten(c, 0.55));
+  if (z === 4) {
+    if (!c2) return c;
+    const b = sole.bottom[x];
+    const h = b - sole.top[x];
+    return b >= 0 && y > b - Math.max(6, Math.min(20, h * 0.22)) && y <= b ? c2 : c;
+  }
+  switch (pattern) {
+    case 'striped': return Math.floor(y / 11) % 2 ? ink : c;
+    case 'checked': {
+      const a = Math.floor(x / 14) % 2; const b = Math.floor(y / 14) % 2;
+      return a && b ? ink : a || b ? mix(c, ink, 0.45) : c;
+    }
+    case 'dotted': {
+      const dx = (x % 16) - 8; const dy = (y % 16) - 8;
+      return dx * dx + dy * dy < 10 ? ink : c;
+    }
+    default: return c;
+  }
 }
 
 function paintPhoto(canvas, { base, zone }, colors) {
@@ -681,13 +753,19 @@ function paintPhoto(canvas, { base, zone }, colors) {
   const d = out.data;
   // I colori molto scuri partono un po' più chiari, se no pieghe e luci non si vedono.
   const tint = {};
-  for (const z in colors) tint[z] = colors[z].map((v) => Math.max(v, 34));
+  const lift = (c) => c && c.map((v) => Math.max(v, 34));
+  for (const z in colors) {
+    const v = colors[z];
+    tint[z] = Array.isArray(v) ? lift(v) : v && { ...v, c: lift(v.c), c2: lift(v.c2) };
+  }
+  const sole = soleMask(zone);
   for (let i = 0; i < d.length; i += 4) {
     const z = Math.round(zone[i] / 60);
     const a = zone[i + 2] / 255;
     if (!z || !a) continue;
-    const c = tint[z];
-    if (!c) continue;
+    if (!tint[z]) continue;
+    const px = i >> 2;
+    const c = fabric(tint[z], px % PW, (px / PW) | 0, z, sole);
     const s = zone[i + 1] / 128; // 1 = colore pieno, meno = ombra, più = luce
     for (let k = 0; k < 3; k++) {
       const v = s <= 1 ? c[k] * s : c[k] + (255 - c[k]) * Math.min(1, (s - 1) * 0.8);
@@ -734,7 +812,7 @@ const SINGLE = {
 };
 
 // Restituisce { view, garment, same } oppure null se il capo non ha un posto sul manichino.
-export function garmentView(category, name, colors) {
+export function garmentView(category, name, colors, pattern) {
   const m = mannequinMatch(category, name);
   if (!m?.garment) return null;
   const spec = SINGLE[currentGender()][m.garment];
@@ -744,7 +822,8 @@ export function garmentView(category, name, colors) {
   const c = (colorOf(colors?.[0]) || [150, 150, 150]).map((v) => Math.max(v, 58));
   const neutral = lum(c) > 0.7 ? [118, 118, 116] : [212, 210, 205];
   const paint = {};
-  for (const z of [1, 2, 3, 4]) paint[z] = zones.includes(z) ? c : neutral;
+  const c2 = colorOf(colors?.[1]);
+  for (const z of [1, 2, 3, 4]) paint[z] = zones.includes(z) ? { c, c2: c2 && c2.map((v) => Math.max(v, 58)), pattern } : neutral;
   const box = document.createElement('div');
   box.className = 'look-view';
   const canvas = document.createElement('canvas');
