@@ -95,6 +95,7 @@ export const SUBTYPES = {
     t('Chino', 3, ALL, ['smart_casual', 'classic'], 2),
     t('Pantaloni eleganti', 4, ALL, ['formal', 'classic'], 2),
     t('Pantaloni sportivi', 1, ALL, ['sporty'], 2),
+    t('Cargo', 2, ALL, ['casual', 'streetwear'], 2),
     t('Bermuda', 1, ['summer'], ['casual'], 1),
     t('Gonna', 3, ['spring', 'summer', 'autumn'], ['romantic', 'smart_casual'], 1),
     t('Leggings', 1, ALL, ['sporty', 'casual'], 2),
@@ -160,3 +161,54 @@ export const PALETTE = {
 
 // Colori che stanno bene con tutto.
 export const NEUTRALS = new Set(['nero', 'grigio', 'grigio chiaro', 'bianco', 'beige', 'marrone', 'blu navy', 'denim']);
+
+// Capi che si vedono sui manichini fotografici (uomo e donna), con i tipi dell'armadio.
+// NEAR: per i tipi che i manichini non hanno, il capo dei manichini più vicino (null = nessuno).
+export const MANNEQUIN = {
+  uomo: {
+    have: {
+      outerwear: ['Blazer', 'Giubbotto'],
+      top: ['Camicia', 'Camicia elegante', 'T-shirt', 'Felpa'],
+      bottom: ['Pantaloni eleganti', 'Chino', 'Jeans', 'Cargo', 'Pantaloni sportivi'],
+      dress: ['Completo', 'Tuta'],
+      shoes: ['Sneakers'],
+      accessory: ['Cintura', 'Borsa'],
+    },
+    near: {
+      Polo: 'T-shirt', Camicetta: 'Camicia', Top: 'T-shirt', Maglione: 'Felpa', Cardigan: 'Felpa', 'Maglia sportiva': 'T-shirt',
+      Bermuda: 'Chino', Leggings: 'Pantaloni sportivi', 'Abito elegante': 'Completo',
+      'Giacca di jeans': 'Giubbotto', Trench: 'Blazer', Cappotto: 'Blazer', Piumino: 'Giubbotto', Impermeabile: 'Giubbotto',
+      'Scarpe da corsa': 'Sneakers', Mocassini: 'Sneakers', 'Scarpe eleganti': 'Sneakers', Stivaletti: 'Sneakers', Sandali: 'Sneakers',
+    },
+  },
+  donna: {
+    have: {
+      outerwear: ['Blazer', 'Giubbotto', 'Piumino'],
+      top: ['Camicia', 'Camicetta', 'Top', 'T-shirt'],
+      bottom: ['Pantaloni eleganti', 'Cargo', 'Pantaloni sportivi'],
+      dress: ['Vestito', 'Abito elegante'],
+      shoes: ['Sneakers', 'Décolleté'],
+      accessory: ['Cintura', 'Borsa'],
+    },
+    near: {
+      Polo: 'T-shirt', 'Camicia elegante': 'Camicia', Felpa: 'Top', Maglione: 'Top', Cardigan: 'Top', 'Maglia sportiva': 'Top',
+      Jeans: 'Cargo', Chino: 'Pantaloni eleganti', Leggings: 'Pantaloni sportivi',
+      Completo: 'Blazer', Tuta: 'Pantaloni sportivi',
+      'Giacca di jeans': 'Giubbotto', Trench: 'Blazer', Cappotto: 'Blazer', Impermeabile: 'Giubbotto',
+      'Scarpe da corsa': 'Sneakers', Mocassini: 'Sneakers', 'Scarpe eleganti': 'Décolleté', Stivaletti: 'Décolleté', Sandali: 'Décolleté',
+    },
+  },
+};
+
+export const currentGender = () => (document.documentElement.dataset.theme === 'donna' ? 'donna' : 'uomo');
+
+// Il capo dell'armadio ha lo stesso capo sui manichini?
+// → { same: true, garment } | { same: false, garment } (il più vicino) | { same: false, garment: null }
+// | null se il tipo non è tra quelli conosciuti (nome scritto a mano).
+export function mannequinMatch(category, name, gender = currentGender()) {
+  const tp = findSubtype(category, name);
+  if (!tp) return null;
+  const m = MANNEQUIN[gender];
+  if ((m.have[category] || []).includes(tp.name)) return { same: true, garment: tp.name };
+  return { same: false, garment: m.near[tp.name] || null };
+}

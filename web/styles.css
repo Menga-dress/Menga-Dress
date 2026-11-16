@@ -130,6 +130,15 @@ p.hint { color: var(--muted); margin: 4px 0 12px; font-size: 14px; }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left;
 }
 
+.tile-warn {
+  position: absolute; top: 6px; right: 6px; width: 24px; height: 24px; border-radius: 50%;
+  background: #e0a526; color: #1b1410; font-size: 13px; line-height: 24px; text-align: center;
+}
+.match { border-radius: 12px; padding: 10px 12px; margin: -4px 0 14px; font-size: 14px; line-height: 1.4; border: 1px solid; }
+.match strong { display: block; margin-bottom: 2px; }
+.match.ok { border-color: #4f9a62; background: rgba(79,154,98,.12); }
+.match.warn { border-color: #e0a526; background: rgba(224,165,38,.14); }
+
 .empty { text-align: center; color: var(--muted); padding: 40px 12px; }
 .empty strong { display: block; color: var(--ink); font-size: 17px; margin-bottom: 6px; }
 

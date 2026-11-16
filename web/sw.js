@@ -1,5 +1,8 @@
 // Rende l'app installabile e utilizzabile anche offline (le chiamate AI e meteo richiedono la rete).
-const CACHE = 'dress-v28';
+const CACHE = 'dress-v29';
+// Modello per riconoscere i capi (circa 23 MB): scaricato solo quando serve e tenuto anche
+// dopo gli aggiornamenti dell'app. Se cambia il modello, cambiare questo nome.
+const MODEL_CACHE = 'menga-modello-v1';
 const SHELL = [
   './',
   './index.html',
@@ -12,6 +15,7 @@ const SHELL = [
   './js/weather.js',
   './js/catalog.js',
   './js/look.js',
+  './js/riconosci.js',
   './js/tema.js',
   './js/sync.js',
   './js/config.js',
@@ -65,7 +69,7 @@ self.addEventListener('install', (e) => {
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k.startsWith('dress-') && k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => (k.startsWith('dress-') && k !== CACHE) || (k.startsWith('menga-modello') && k !== MODEL_CACHE)).map((k) => caches.delete(k))))
       .then(() => self.clients.claim()),
   );
 });
@@ -74,6 +78,11 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== self.location.origin) return;
+  if (/\/(modello|vendor)\//.test(url.pathname)) {
+    e.respondWith(caches.open(MODEL_CACHE).then((c) => c.match(e.request.url).then((hit) => hit || fetch(e.request.url)
+      .then((res) => { if (res.ok) c.put(e.request.url, res.clone()); return res; }))));
+    return;
+  }
   e.respondWith(
     // no-cache: chiede sempre al server se il file è cambiato (GitHub Pages altrimenti
     // lascia usare per 10 minuti la copia vecchia del browser).
