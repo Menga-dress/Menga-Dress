@@ -262,3 +262,10 @@ dialog .account { margin-top: 16px; }
 .google-btn { display: flex; align-items: center; justify-content: center; gap: 10px; background: #fff; color: #1f1f1f; border-color: #dadce0; }
 .g-logo { display: inline-flex; }
 .login-or { text-align: center; color: var(--muted); font-size: 13px; margin: 14px 0 6px; }
+
+/* foto senza sfondo */
+img.cut { object-fit: contain !important; background: var(--surface); padding: 4px; box-sizing: border-box; }
+.bgslot { display: flex; justify-content: flex-end; min-height: 1.6em; margin: 4px 0 2px; }
+.bgslot .status { margin: 0; }
+.linkbtn { background: none; border: 0; padding: 4px 2px; color: var(--accent); font: inherit; font-size: .9em; text-decoration: underline; cursor: pointer; }
+.hint.learned { color: var(--accent); }

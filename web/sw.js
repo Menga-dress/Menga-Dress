@@ -1,5 +1,5 @@
 // Rende l'app installabile e utilizzabile anche offline (le chiamate AI e meteo richiedono la rete).
-const CACHE = 'dress-v34';
+const CACHE = 'dress-v35';
 
 // Modello per riconoscere i capi (circa 23 MB): scaricato solo quando serve e tenuto anche
 // dopo gli aggiornamenti dell'app. Se cambia il modello, cambiare questo nome.
@@ -17,6 +17,7 @@ const SHELL = [
   './js/catalog.js',
   './js/look.js',
   './js/riconosci.js',
+  './js/sfondo.js',
   './js/tema.js',
   './js/sync.js',
   './js/config.js',
