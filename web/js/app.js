@@ -3,14 +3,14 @@ import { getWeather } from './weather.js';
 import { detectColors } from './colors.js';
 import { suggestOutfits, ideaName } from './stylist.js';
 import { lookView, garmentView } from './look.js';
-import { recognizeGarment, isModelCached } from './riconosci.js';
+import { analyzeGarment, isModelCached } from './riconosci.js';
 import * as sync from './sync.js';
 import {
   CATEGORIES, SEASONS, STYLES, PATTERNS, MOODS, OCCASIONS, FORMALITY, SUBTYPES, PALETTE, describeItem,
   mannequinMatch, currentGender,
 } from './catalog.js';
 
-const APP_VERSION = '31'; // da aumentare a ogni modifica, si vede nelle Impostazioni
+const APP_VERSION = '32'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
 
@@ -96,6 +96,21 @@ function chipGroup(options, selected, { multiple = false, scroll = false, onChan
   }
   wrap.value = () => (multiple ? [...current] : [...current][0]);
   return wrap;
+}
+
+// Distanza tra due colori come la vede l'occhio (Lab).
+function labDistance(a, b) {
+  const lab = ([r, g, bl]) => {
+    const lin = (c) => { c /= 255; return c > 0.04045 ? ((c + 0.055) / 1.055) ** 2.4 : c / 12.92; };
+    const [R, G, B] = [lin(r), lin(g), lin(bl)];
+    const f = (t) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+    const x = f((R * 0.4124 + G * 0.3576 + B * 0.1805) / 0.95047);
+    const y = f(R * 0.2126 + G * 0.7152 + B * 0.0722);
+    const z = f((R * 0.0193 + G * 0.1192 + B * 0.9505) / 1.08883);
+    return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
+  };
+  const p = lab(a); const q = lab(b);
+  return Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
 }
 
 // "la felpa", "il blazer", "i jeans"... per le frasi dell'app.
@@ -339,9 +354,21 @@ function editItem(item, { isNew = false } = {}) {
       guessSlot.replaceChildren(h('div', { class: 'status' }, h('span', { class: 'spinner' }),
         isModelCached() ? 'Riconosco il capo…' : 'Riconosco il capo… (la prima volta scarico il modello, circa 12 MB)'));
       try {
-        const guesses = await recognizeGarment(item.image, 4);
+        const { types: guesses, colors: hues } = await analyzeGarment(item.image, 4);
         const [first, ...others] = guesses;
         chooseType(first.category, first.name);
+        // Colore principale dal modello (non si lascia ingannare da luce e ombre), il secondo
+        // dalla foto solo se è davvero diverso (non un'ombra dello stesso colore).
+        if (hues[0]?.p >= 0.5 && colorsAuto) {
+          await colorsDone;
+          const main = hues[0].name;
+          const far = (a, b) => labDistance(PALETTE[a], PALETTE[b]) > 35;
+          const extra = f.colors.value.split(',').map((x) => x.trim()).filter((c) => PALETTE[c] && far(c, main));
+          f.colors.value = [main, ...extra].slice(0, 2).join(', ');
+          paintColorChips();
+          paintMannequin();
+          status.replaceChildren(h('p', { class: 'hint' }, `Colori riconosciuti: ${f.colors.value}.`));
+        }
         const sure = first.p >= 0.5;
         guessSlot.replaceChildren(h('div', { class: 'field' },
           h('p', { class: 'hint' }, `${sure ? 'Mi sembra' : 'Forse è'}: ${articolo(first.name)} (${Math.round(first.p * 100)}%). Se non è giusto tocca un'altra ipotesi o scegli tu il tipo.`),
@@ -375,6 +402,11 @@ function editItem(item, { isNew = false } = {}) {
     f.colors.addEventListener('input', () => { paintColorChips(); paintMannequin(); });
     paintColorChips();
 
+    // I colori si aggiornano da soli solo finché l'utente non li tocca.
+    let colorsAuto = !(item.colors || []).length;
+    let colorsDone = Promise.resolve();
+    colorChips.addEventListener('click', () => { colorsAuto = false; });
+    f.colors.addEventListener('input', () => { colorsAuto = false; });
     const runColors = async () => {
       status.replaceChildren(h('div', { class: 'status' }, h('span', { class: 'spinner' }), 'Riconosco i colori…'));
       try {
@@ -447,7 +479,7 @@ function editItem(item, { isNew = false } = {}) {
         isNew ? null : h('button', { class: 'btn', type: 'button', onclick: runGarment }, 'Riconosci capo'),
         h('button', { class: 'btn primary', type: 'button', onclick: save }, 'Salva')),
     ].filter(Boolean));
-    if (isNew) setTimeout(() => { runColors(); runGarment(); }, 0);
+    if (isNew) setTimeout(() => { colorsDone = runColors(); runGarment(); }, 0);
     return wrap;
   });
 }

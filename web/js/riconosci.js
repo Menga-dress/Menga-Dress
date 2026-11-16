@@ -22,7 +22,7 @@ function load() {
         ort.InferenceSession.create(base('../modello/immagini.onnx'), { executionProviders: ['wasm'] }),
       ]);
       try { localStorage.setItem('menga-modello', '1'); } catch { /* niente */ }
-      return { ort, pre, classes: testi.classes, session };
+      return { ort, pre, classes: testi.classes, colors: testi.colors, session };
     })().catch((e) => { loading = null; throw e; });
   }
   return loading;
@@ -64,28 +64,38 @@ async function pixels(blob, pre) {
   return { data: out, dims: [1, 3, ch, cw] };
 }
 
-// Restituisce i tipi più probabili: [{ category, name, p }] con p tra 0 e 1.
-export async function recognizeGarment(blob, top = 3) {
-  const { ort, pre, classes, session } = await load();
+// Probabilità come in CLIP (scala 100) delle classi rispetto all'impronta della foto.
+function rank(list, v, n) {
+  const scores = list.map((c) => {
+    let s = 0;
+    for (let i = 0; i < c.e.length; i++) s += c.e[i] * v[i];
+    return s;
+  });
+  const mx = Math.max(...scores);
+  const ex = scores.map((s) => Math.exp(100 * (s - mx)));
+  const tot = ex.reduce((a, b) => a + b, 0);
+  return list.map((c, i) => ({ category: c.category, name: c.name, p: ex[i] / tot })).sort((a, b) => b.p - a.p);
+}
+
+// Guarda la foto una volta sola e restituisce i tipi e i colori più probabili:
+// { types: [{ category, name, p }], colors: [{ name, p }] } con p tra 0 e 1.
+export async function analyzeGarment(blob, top = 4) {
+  const { ort, pre, classes, colors, session } = await load();
   const px = await pixels(blob, pre);
   const feeds = { [session.inputNames[0]]: new ort.Tensor('float32', px.data, px.dims) };
   const res = await session.run(feeds);
   const outName = session.outputNames.includes('image_embeds') ? 'image_embeds' : session.outputNames[0];
-  const v = res[outName].data;
+  const raw = res[outName].data;
   let n = 0;
-  for (let i = 0; i < v.length; i++) n += v[i] * v[i];
+  for (let i = 0; i < raw.length; i++) n += raw[i] * raw[i];
   n = Math.sqrt(n) || 1;
-  const scores = classes.map((c) => {
-    let s = 0;
-    for (let i = 0; i < c.e.length; i++) s += c.e[i] * v[i];
-    return s / n;
-  });
-  // Probabilità come in CLIP (scala 100).
-  const mx = Math.max(...scores);
-  const ex = scores.map((s) => Math.exp(100 * (s - mx)));
-  const tot = ex.reduce((a, b) => a + b, 0);
-  return classes
-    .map((c, i) => ({ category: c.category, name: c.name, p: ex[i] / tot }))
-    .sort((a, b) => b.p - a.p)
-    .slice(0, top);
+  const v = Array.from(raw, (x) => x / n);
+  return {
+    types: rank(classes, v).slice(0, top),
+    colors: colors ? rank(colors, v).slice(0, 3).map(({ name, p }) => ({ name, p })) : [],
+  };
+}
+
+export async function recognizeGarment(blob, top = 3) {
+  return (await analyzeGarment(blob, top)).types;
 }
