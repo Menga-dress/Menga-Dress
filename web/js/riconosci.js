@@ -3,6 +3,8 @@
 // un'"impronta" che si confronta con quelle già calcolate dei tipi di capo (web/modello/testi.json).
 // Il modello si scarica una sola volta (circa 12 MB) e poi resta nella cache del telefono.
 
+import * as db from './db.js';
+
 const base = (p) => new URL(p, import.meta.url).href;
 let loading = null;
 
@@ -67,7 +69,7 @@ async function pixels(blob, pre) {
 // Probabilità come in CLIP (scala 100) delle classi rispetto all'impronta della foto.
 function rank(list, v, n) {
   const scores = list.map((c) => {
-    let s = 0;
+    let s = c.boost || 0;
     for (let i = 0; i < c.e.length; i++) s += c.e[i] * v[i];
     return s;
   });
@@ -77,22 +79,97 @@ function rank(list, v, n) {
   return list.map((c, i) => ({ category: c.category, name: c.name, p: ex[i] / tot })).sort((a, b) => b.p - a.p);
 }
 
-// Guarda la foto una volta sola e restituisce i tipi e i colori più probabili:
-// { types: [{ category, name, p }], colors: [{ name, p }] } con p tra 0 e 1.
-export async function analyzeGarment(blob, top = 4) {
-  const { ort, pre, classes, colors, session } = await load();
+// Impronta della foto (vettore normalizzato).
+async function embed(blob) {
+  const { ort, pre, session } = await load();
   const px = await pixels(blob, pre);
-  const feeds = { [session.inputNames[0]]: new ort.Tensor('float32', px.data, px.dims) };
-  const res = await session.run(feeds);
+  const res = await session.run({ [session.inputNames[0]]: new ort.Tensor('float32', px.data, px.dims) });
   const outName = session.outputNames.includes('image_embeds') ? 'image_embeds' : session.outputNames[0];
   const raw = res[outName].data;
   let n = 0;
   for (let i = 0; i < raw.length; i++) n += raw[i] * raw[i];
   n = Math.sqrt(n) || 1;
-  const v = Array.from(raw, (x) => x / n);
+  return Array.from(raw, (x) => x / n);
+}
+
+// ---------- l'app impara dai tuoi capi ----------
+// Per ogni capo salvato si tiene l'impronta della sua foto (solo sul telefono, in kv 'impronte').
+// Una foto nuova molto simile a un capo già salvato prende il suo tipo: così le correzioni
+// (es. "non sono leggings, sono chino") valgono anche per le foto successive.
+const version = (it) => it.updatedAt || it.createdAt || '';
+const dot = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += a[i] * b[i]; return s; };
+
+export async function rememberGarment(item, emb) {
+  if (!emb) return;
+  const store = (await db.getKV('impronte')) || {};
+  store[item.id] = { v: version(item), e: emb.map((x) => Math.round(x * 1000) / 1000) };
+  await db.setKV('impronte', store);
+}
+
+export async function forgetGarment(id) {
+  const store = (await db.getKV('impronte')) || {};
+  if (store[id]) { delete store[id]; await db.setKV('impronte', store); }
+}
+
+// Calcola in sottofondo le impronte dei capi che non l'hanno ancora (o con la foto cambiata).
+let filling = false;
+export async function learnFromWardrobe() {
+  if (filling) return;
+  filling = true;
+  try {
+    const items = await db.getAll('items');
+    const store = (await db.getKV('impronte')) || {};
+    let changed = false;
+    for (const id of Object.keys(store)) if (!items.some((it) => it.id === id)) { delete store[id]; changed = true; }
+    for (const it of items) {
+      if (!it.image || !it.category || !it.subcategory || store[it.id]?.v === version(it)) continue;
+      try {
+        store[it.id] = { v: version(it), e: (await embed(it.image)).map((x) => Math.round(x * 1000) / 1000) };
+        changed = true;
+      } catch { /* foto illeggibile: si salta */ }
+      await new Promise((r) => setTimeout(r, 30));
+    }
+    if (changed) await db.setKV('impronte', store);
+  } finally { filling = false; }
+}
+
+// Tipo dei capi già salvati più simili alla foto: { [category|subcategory]: somiglianza massima }.
+async function nearestKnown(v, excludeId) {
+  const store = (await db.getKV('impronte')) || {};
+  const items = await db.getAll('items');
+  const byId = new Map(items.map((it) => [it.id, it]));
+  const best = {};
+  let top = null;
+  for (const [id, rec] of Object.entries(store)) {
+    if (id === excludeId) continue;
+    const it = byId.get(id);
+    if (!it?.category || !it.subcategory) continue;
+    const sim = dot(v, rec.e);
+    const key = `${it.category}|${it.subcategory}`;
+    if (!(key in best) || sim > best[key]) best[key] = sim;
+    if (!top || sim > top.sim) top = { sim, item: it };
+  }
+  return { best, top };
+}
+
+// Guarda la foto una volta sola e restituisce i tipi e i colori più probabili:
+// { types: [{ category, name, p }], colors: [{ name, p }] } con p tra 0 e 1.
+// learned: il capo già salvato più simile, se lo è molto (stesso capo o quasi).
+export async function analyzeGarment(blob, top = 4, { excludeId } = {}) {
+  const { classes, colors } = await load();
+  const v = await embed(blob);
+  // Somiglianza con i capi già salvati: sopra 0,85 sposta il tipo verso quello del capo simile.
+  let known = { best: {}, top: null };
+  try { known = await nearestKnown(v, excludeId); } catch { /* niente memoria */ }
+  const boosted = classes.map((c) => {
+    const sim = known.best[`${c.category}|${c.name}`];
+    return sim > 0.85 ? { ...c, boost: (sim - 0.85) * 2 } : c;
+  });
   return {
-    types: rank(classes, v).slice(0, top),
+    types: rank(boosted, v).slice(0, top),
     colors: colors ? rank(colors, v).slice(0, 3).map(({ name, p }) => ({ name, p })) : [],
+    emb: v,
+    learned: known.top && known.top.sim > 0.88 ? known.top : null,
   };
 }
 

@@ -64,6 +64,8 @@ Limiti del piano gratuito: 500 MB di database e 1 GB di foto (migliaia di capi).
 - HTML, CSS e JavaScript senza passaggi di build, nella cartella `web/`.
 - Dati in IndexedDB sul dispositivo; il backup scarica un file JSON con anche le foto.
 - Account e sincronizzazione in `web/js/sync.js` (libreria `@supabase/supabase-js` caricata dal CDN jsDelivr solo se il progetto è collegato).
+- Sfondo delle foto tolto sul telefono con U²-Net piccolo (u2netp, licenza Apache 2.0, `web/modello/sfondo.onnx`, 4,6 MB) in `web/js/sfondo.js`; la foto con lo sfondo si può rimettere finché il capo non è salvato.
+- L'app impara dalle correzioni: per ogni capo salvato tiene l'"impronta" della foto (in IndexedDB, chiave `impronte`, solo sul telefono). Una foto nuova molto simile a un capo già salvato prende il suo tipo (`web/js/riconosci.js`).
 - Meteo da [Open-Meteo](https://open-meteo.com), gratuito e senza chiave.
 
 Per provarla in locale: `cd web && python3 -m http.server 8000` e apri `http://localhost:8000`.

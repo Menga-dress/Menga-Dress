@@ -3,14 +3,15 @@ import { getWeather } from './weather.js';
 import { detectColors } from './colors.js';
 import { suggestOutfits, ideaName } from './stylist.js';
 import { lookView, garmentView } from './look.js';
-import { analyzeGarment, isModelCached } from './riconosci.js';
+import { analyzeGarment, isModelCached, rememberGarment, forgetGarment, learnFromWardrobe } from './riconosci.js';
+import { removeBackground } from './sfondo.js';
 import * as sync from './sync.js';
 import {
   CATEGORIES, SEASONS, STYLES, PATTERNS, MOODS, OCCASIONS, FORMALITY, SUBTYPES, PALETTE, describeItem,
   mannequinMatch, currentGender,
 } from './catalog.js';
 
-const APP_VERSION = '34'; // da aumentare a ogni modifica, si vede nelle Impostazioni
+const APP_VERSION = '35'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
 
@@ -226,7 +227,7 @@ function colorDots(it) {
 function wardrobeTile(it) {
   const m = mannequinMatch(it.category, it.subcategory);
   return h('button', { class: 'tile', type: 'button', onclick: () => editItem(it) },
-    h('img', { src: imgURL(it), alt: describeItem(it), loading: 'lazy' }),
+    h('img', { src: imgURL(it), alt: describeItem(it), loading: 'lazy', class: it.cutout ? 'cut' : null }),
     m?.same === false ? h('span', { class: 'tile-warn', title: 'Non c\'è sui manichini' }, '⚠') : null,
     h('span', { class: 'tag' }, colorDots(it).slice(0, 1), it.subcategory || CATEGORIES[it.category] || 'Capo'));
 }
@@ -237,7 +238,7 @@ function wardrobeRow(it) {
     : m.same ? h('span', { class: 'st ok' }, '✓ Manichino')
       : h('span', { class: 'st warn' }, m.garment ? `⚠ Come ${m.garment}` : '⚠ Non sul manichino');
   return h('button', { class: 'wrow', type: 'button', onclick: () => editItem(it) },
-    h('img', { src: imgURL(it), alt: describeItem(it), loading: 'lazy' }),
+    h('img', { src: imgURL(it), alt: describeItem(it), loading: 'lazy', class: it.cutout ? 'cut' : null }),
     h('span', { class: 'wrow-body' },
       h('strong', {}, it.subcategory || CATEGORIES[it.category] || 'Capo'),
       h('span', { class: 'wrow-colors' }, colorDots(it), (it.colors || []).join(', ') || 'colore non indicato'),
@@ -376,7 +377,8 @@ function editItem(item, { isNew = false } = {}) {
   openDialog((close) => {
     const wrap = h('div', { class: 'sheet' });
     const status = h('div');
-    const photo = h('img', { class: 'preview', src: URL.createObjectURL(item.image), alt: 'Foto del capo' });
+    const photo = h('img', { class: item.cutout ? 'preview cut' : 'preview', src: URL.createObjectURL(item.image), alt: 'Foto del capo' });
+    const bgSlot = h('div', { class: 'bgslot' });
     const mannequinSlot = h('figure', { class: 'pair-look' });
     const preview = h('div', { class: 'pair' }, h('figure', {}, photo, h('figcaption', {}, 'La tua foto')), mannequinSlot);
 
@@ -391,6 +393,8 @@ function editItem(item, { isNew = false } = {}) {
       notes: h('textarea', {}, item.notes || ''),
     };
     let category = item.category;
+    let lastEmb = null; // impronta della foto, per ricordare il tipo scelto
+    let lastEmbImage = null;
     let seasons = chipGroup(SEASONS, item.seasons, { multiple: true });
     let styles = chipGroup(STYLES, item.styles, { multiple: true });
     const seasonsSlot = h('div', {}, seasons);
@@ -480,9 +484,14 @@ function editItem(item, { isNew = false } = {}) {
       guessSlot.replaceChildren(h('div', { class: 'status' }, h('span', { class: 'spinner' }),
         isModelCached() ? 'Riconosco il capo…' : 'Riconosco il capo… (la prima volta scarico il modello, circa 12 MB)'));
       try {
-        const { types: guesses, colors: hues } = await analyzeGarment(item.image, 4);
+        const { types: guesses, colors: hues, emb, learned } = await analyzeGarment(item.image, 4, { excludeId: item.id });
+        lastEmb = emb;
+        lastEmbImage = item.image;
         const [first, ...others] = guesses;
         chooseType(first.category, first.name);
+        // Molto simile a un capo già salvato: si usa anche il nome che gli avevi dato tu.
+        const same = learned && learned.item.category === first.category && learned.item.subcategory === first.name;
+        if (same && learned.item.subcategory && !f.subcategory.value.trim()) f.subcategory.value = learned.item.subcategory;
         // Colore principale dal modello (non si lascia ingannare da luce e ombre), il secondo
         // dalla foto solo se è davvero diverso (non un'ombra dello stesso colore).
         if (hues[0]?.p >= 0.5 && colorsAuto) {
@@ -497,7 +506,8 @@ function editItem(item, { isNew = false } = {}) {
         }
         const sure = first.p >= 0.5;
         guessSlot.replaceChildren(h('div', { class: 'field' },
-          h('p', { class: 'hint' }, `${sure ? 'Mi sembra' : 'Forse è'}: ${articolo(first.name)} (${Math.round(first.p * 100)}%). Se non è giusto tocca un'altra ipotesi o scegli tu il tipo.`),
+          h('p', { class: 'hint' }, `${sure ? 'Mi sembra' : 'Forse è'}: ${articolo(first.name)} (${Math.round(first.p * 100)}%). Se non è giusto tocca un'altra ipotesi o scegli tu il tipo: me lo ricorderò per i capi simili.`),
+          same ? h('p', { class: 'hint learned' }, `Somiglia a un capo che hai già salvato come ${articolo(first.name)}.`) : null,
           h('div', { class: 'chips' }, ...others.filter((g) => g.p >= 0.03).map((g) => h('button', {
             type: 'button', class: 'chip', onclick: () => { chooseType(g.category, g.name); },
           }, `${g.name} ${Math.round(g.p * 100)}%`)))));
@@ -551,6 +561,47 @@ function editItem(item, { isNew = false } = {}) {
       }
     };
 
+    // ---------- sfondo ----------
+    // Le due versioni della foto (con e senza sfondo) restano a portata finché la scheda è aperta.
+    let withBg = item.cutout ? null : item.image;
+    let noBg = item.cutout ? item.image : null;
+    const setImage = (cut) => {
+      item = { ...item, image: cut ? noBg : withBg, cutout: cut };
+      photo.src = URL.createObjectURL(item.image);
+      photo.className = cut ? 'preview cut' : 'preview';
+      paintBgSlot();
+      if (isNew) { colorsAuto = true; colorsDone = runColors(); runGarment(); }
+    };
+    const paintBgSlot = () => {
+      const btn = (label, onclick) => h('button', { type: 'button', class: 'linkbtn', onclick }, label);
+      bgSlot.replaceChildren(item.cutout
+        ? (withBg ? btn('Rimetti lo sfondo', () => setImage(false)) : null)
+        : btn('Togli lo sfondo', () => cutBackground(true)));
+    };
+    // Restituisce true se lo sfondo è stato tolto.
+    const cutBackground = async (manual) => {
+      if (!noBg) {
+        bgSlot.replaceChildren(h('div', { class: 'status' }, h('span', { class: 'spinner' }), 'Tolgo lo sfondo…'));
+        try {
+          noBg = await removeBackground(withBg);
+        } catch (e) {
+          console.warn('sfondo', e);
+          paintBgSlot();
+          if (manual) toast('Non sono riuscito a togliere lo sfondo (serve la rete la prima volta).');
+          return false;
+        }
+        if (!noBg) {
+          paintBgSlot();
+          if (manual) toast('Non riesco a staccare bene il capo dallo sfondo: tengo la foto com\'è.');
+          return false;
+        }
+      }
+      if (manual) setImage(true);
+      else { item = { ...item, image: noBg, cutout: true }; photo.src = URL.createObjectURL(noBg); photo.className = 'preview cut'; paintBgSlot(); }
+      return true;
+    };
+    paintBgSlot();
+
     const save = async () => {
       if (!category) { toast('Scegli una categoria.'); return; }
       const updated = {
@@ -566,9 +617,18 @@ function editItem(item, { isNew = false } = {}) {
         brand: f.brand.value.trim(),
         size: f.size.value.trim(),
         notes: f.notes.value.trim(),
+        image: item.image,
+        cutout: !!item.cutout,
         updatedAt: new Date().toISOString(),
       };
       await db.put('items', updated);
+      // L'app ricorda il tipo che hai scelto per questa foto e lo usa per i capi simili.
+      const learnNow = async () => {
+        if (!lastEmb || lastEmbImage !== item.image) lastEmb = null;
+        if (lastEmb) await rememberGarment(updated, lastEmb);
+        await learnFromWardrobe();
+      };
+      learnNow().catch(() => {});
       close();
       toast(isNew ? 'Capo aggiunto all\'armadio' : 'Modifiche salvate');
       renderWardrobe();
@@ -577,6 +637,7 @@ function editItem(item, { isNew = false } = {}) {
     const del = async () => {
       if (!confirm('Eliminare questo capo dall\'armadio?')) return;
       await db.remove('items', item.id);
+      forgetGarment(item.id).catch(() => {});
       close();
       toast('Capo eliminato');
       renderWardrobe();
@@ -585,6 +646,7 @@ function editItem(item, { isNew = false } = {}) {
     wrap.append(...[
       sheetHead(isNew ? 'Nuovo capo' : 'Dettagli capo', close),
       preview,
+      bgSlot,
       status,
       guessSlot,
       isNew ? null : h('p', { class: 'stat' },
@@ -606,7 +668,13 @@ function editItem(item, { isNew = false } = {}) {
         isNew ? null : h('button', { class: 'btn', type: 'button', onclick: runGarment }, 'Riconosci capo'),
         h('button', { class: 'btn primary', type: 'button', onclick: save }, 'Salva')),
     ].filter(Boolean));
-    if (isNew) setTimeout(() => { colorsDone = runColors(); runGarment(); }, 0);
+    if (isNew) {
+      setTimeout(async () => {
+        await cutBackground(false);
+        colorsDone = runColors();
+        runGarment();
+      }, 0);
+    }
     return wrap;
   });
 }
@@ -750,7 +818,7 @@ function paintResults(box, items) {
           return h('figure', {}, h('div', { class: 'idea-tile', style: `background:rgb(${rgb.join(',')});color:${light ? '#1f1d1a' : '#fff'}` },
             h('span', {}, it.subcategory), h('small', {}, it.colors[0])), h('figcaption', {}, 'Da prendere'));
         }
-        return h('figure', {}, h('img', { src: imgURL(it), alt: describeItem(it) }), h('figcaption', {}, it.subcategory || CATEGORIES[it.category]));
+        return h('figure', {}, h('img', { src: imgURL(it), alt: describeItem(it), class: it.cutout ? 'cut' : null }), h('figcaption', {}, it.subcategory || CATEGORIES[it.category]));
       })),
       o.ideas.length ? h('div', { class: 'missing' },
         h('span', {}, o.ideas.length === o.pieces.length ? 'Capi da prendere: ' : 'Per completarlo ti manca: '),
@@ -1120,6 +1188,8 @@ window.addEventListener('hashchange', route);
 route();
 db.askPersistence();
 initAccount();
+// L'app impara dai capi già salvati (in sottofondo, solo se il modello è già sul telefono).
+if (isModelCached()) setTimeout(() => { learnFromWardrobe().catch(() => {}); }, 4000);
 
 // Aggiornamenti: controlla subito se c'è una versione nuova (anche quando riapri l'app)
 // e, appena è installata, ricarica la pagina da sola.

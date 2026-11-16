@@ -48,6 +48,27 @@ export async function detectColors(blob, max = 2) {
   ctx.drawImage(img, 0, 0, W, H);
   const data = ctx.getImageData(0, 0, W, H).data;
   const px = (x, y) => { const i = (y * W + x) * 4; return [data[i], data[i + 1], data[i + 2]]; };
+  const alpha = (x, y) => data[(y * W + x) * 4 + 3];
+
+  // Foto con lo sfondo già tolto (trasparente): conta solo i pixel del capo, in tutta l'immagine.
+  let clear = 0;
+  for (let i = 3; i < data.length; i += 4) if (data[i] < 128) clear++;
+  if (clear > W * H * 0.05) {
+    const counts = {};
+    let total = 0;
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        if (alpha(x, y) < 200) continue;
+        const n = nearest(px(x, y));
+        counts[n] = (counts[n] || 0) + 1;
+        total++;
+      }
+    }
+    if (total) {
+      return Object.entries(counts).sort((a, b) => b[1] - a[1])
+        .filter(([, n], i) => i === 0 || n / total > 0.18).slice(0, max).map(([k]) => k);
+    }
+  }
 
   const border = {};
   for (let x = 0; x < W; x++) { for (const y of [0, H - 1]) { const n = nearest(px(x, y)); border[n] = (border[n] || 0) + 1; } }
