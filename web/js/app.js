@@ -3,12 +3,14 @@ import { getWeather } from './weather.js';
 import { detectColors } from './colors.js';
 import { suggestOutfits, ideaName } from './stylist.js';
 import { lookView } from './look.js';
+import { recognizeGarment, isModelCached } from './riconosci.js';
 import * as sync from './sync.js';
 import {
   CATEGORIES, SEASONS, STYLES, PATTERNS, MOODS, OCCASIONS, FORMALITY, SUBTYPES, PALETTE, describeItem,
+  mannequinMatch, currentGender,
 } from './catalog.js';
 
-const APP_VERSION = '28'; // da aumentare a ogni modifica, si vede nelle Impostazioni
+const APP_VERSION = '29'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
 
@@ -96,6 +98,18 @@ function chipGroup(options, selected, { multiple = false, scroll = false, onChan
   return wrap;
 }
 
+// "la felpa", "il blazer", "i jeans"... per le frasi dell'app.
+function articolo(name) {
+  const n = name.toLowerCase();
+  if (/^(jeans|chino|pantaloni|leggings|bermuda|cargo|sandali|mocassini|stivaletti|décolleté)/.test(n)) return `i ${n}`;
+  if (/^(scarpe)/.test(n)) return `le ${n}`;
+  if (/^(sneakers)/.test(n)) return `le ${n}`;
+  if (/^[aeiou]/.test(n)) return `l'${n}`;
+  if (/^(felpa|camicia|camicetta|giacca|polo|maglia|gonna|tuta|t-shirt|cintura|borsa|sciarpa|cravatta)/.test(n)) return `la ${n}`;
+  if (/^(s[^aeiou]|z|ps|gn)/.test(n)) return `lo ${n}`;
+  return `il ${n}`;
+}
+
 function field(label, control) {
   return h('label', { class: 'field' }, h('span', {}, label), control);
 }
@@ -148,10 +162,17 @@ async function renderWardrobe() {
     view.append(h('div', { class: 'empty' }, 'Nessun capo in questa categoria.'));
   } else {
     view.append(h('p', { class: 'stat' }, `${shown.length} ${shown.length === 1 ? 'capo' : 'capi'}`));
+    // Capi che i manichini non hanno uguali: segnalati con un bollino.
+    const missing = shown.filter((it) => mannequinMatch(it.category, it.subcategory)?.same === false);
+    if (missing.length) {
+      view.append(h('p', { class: 'hint' }, `⚠ ${missing.length} ${missing.length === 1 ? 'capo non ha' : 'capi non hanno'} lo stesso capo sui manichini ${currentGender() === 'donna' ? 'donna' : 'uomo'}: toccali per vedere come appaiono nell'anteprima.`));
+    }
     const grid = h('div', { class: 'grid' });
     for (const it of shown) {
+      const m = mannequinMatch(it.category, it.subcategory);
       grid.append(h('button', { class: 'tile', type: 'button', onclick: () => editItem(it) },
         h('img', { src: imgURL(it), alt: describeItem(it), loading: 'lazy' }),
+        m?.same === false ? h('span', { class: 'tile-warn', title: 'Non c\'è sui manichini' }, '⚠') : null,
         h('span', { class: 'tag' }, it.subcategory || CATEGORIES[it.category] || 'Capo')));
     }
     view.append(grid);
@@ -216,10 +237,36 @@ function editItem(item, { isNew = false } = {}) {
     const seasonsSlot = h('div', {}, seasons);
     const stylesSlot = h('div', {}, styles);
     const typesSlot = h('div');
+    const matchSlot = h('div');
+    const guessSlot = h('div');
+
+    // Capo corrispondente sui manichini, aggiornato a ogni cambio di categoria o tipo.
+    const paintMatch = () => {
+      const name = f.subcategory.value.trim();
+      if (!category || !name) { matchSlot.replaceChildren(); return; }
+      const m = mannequinMatch(category, name);
+      const who = currentGender() === 'donna' ? 'manichini donna' : 'manichini uomo';
+      let box;
+      if (!m) {
+        box = h('div', { class: 'match warn' }, h('strong', {}, '⚠ Tipo non riconosciuto'),
+          `"${name}" non è tra i tipi dell'app: scegli un tipo qui sopra per collegarlo a un capo dei ${who}.`);
+      } else if (m.same) {
+        box = h('div', { class: 'match ok' }, h('strong', {}, `✓ Sui manichini: ${m.garment}`),
+          `I ${who} hanno lo stesso capo, l'anteprima lo mostra col suo colore.`);
+      } else if (m.garment) {
+        box = h('div', { class: 'match warn' }, h('strong', {}, `⚠ I ${who} non hanno ${articolo(name)}`),
+          `Nell'anteprima apparirà come il capo più simile: ${m.garment}.`);
+      } else {
+        box = h('div', { class: 'match warn' }, h('strong', {}, `⚠ I ${who} non hanno ${articolo(name)}`),
+          'Nessun capo simile: nell\'anteprima non comparirà.');
+      }
+      matchSlot.replaceChildren(box);
+    };
 
     // Scegliendo il tipo (es. "Felpa") compilo formalità, stagioni e stili: si possono cambiare.
     const applyType = (tp) => {
       f.subcategory.value = tp.name;
+      paintMatch();
       f.formality.value = String(tp.formality);
       seasons = chipGroup(SEASONS, tp.seasons, { multiple: true });
       styles = chipGroup(STYLES, tp.styles, { multiple: true });
@@ -234,9 +281,39 @@ function editItem(item, { isNew = false } = {}) {
         chipGroup(opts, f.subcategory.value, { onChange: (v) => applyType(list.find((tp) => tp.name === v)) })));
     };
     const categoryChips = chipGroup(CATEGORIES, category, {
-      onChange: (v) => { category = v; f.subcategory.value = ''; paintTypes(); },
+      onChange: (v) => { category = v; f.subcategory.value = ''; paintTypes(); paintMatch(); },
     });
     paintTypes();
+    paintMatch();
+    f.subcategory.addEventListener('input', paintMatch);
+
+    // Seleziona categoria e tipo come se li avesse toccati l'utente.
+    const chooseType = (cat, name) => {
+      const ci = Object.keys(CATEGORIES).indexOf(cat);
+      categoryChips.children[ci]?.click();
+      const ti = (SUBTYPES[cat] || []).findIndex((tp) => tp.name === name);
+      typesSlot.querySelector('.chips')?.children[ti]?.click();
+    };
+
+    // Riconoscimento del tipo di capo dalla foto, sul telefono.
+    const runGarment = async () => {
+      guessSlot.replaceChildren(h('div', { class: 'status' }, h('span', { class: 'spinner' }),
+        isModelCached() ? 'Riconosco il capo…' : 'Riconosco il capo… (la prima volta scarico il modello, circa 12 MB)'));
+      try {
+        const guesses = await recognizeGarment(item.image, 4);
+        const [first, ...others] = guesses;
+        chooseType(first.category, first.name);
+        const sure = first.p >= 0.5;
+        guessSlot.replaceChildren(h('div', { class: 'field' },
+          h('p', { class: 'hint' }, `${sure ? 'Mi sembra' : 'Forse è'}: ${articolo(first.name)} (${Math.round(first.p * 100)}%). Se non è giusto tocca un'altra ipotesi o scegli tu il tipo.`),
+          h('div', { class: 'chips' }, ...others.filter((g) => g.p >= 0.03).map((g) => h('button', {
+            type: 'button', class: 'chip', onclick: () => { chooseType(g.category, g.name); },
+          }, `${g.name} ${Math.round(g.p * 100)}%`)))));
+      } catch (e) {
+        console.warn('riconoscimento capo', e);
+        guessSlot.replaceChildren(h('p', { class: 'hint' }, 'Non sono riuscito a riconoscere il capo (serve la rete la prima volta). Scegli tu categoria e tipo.'));
+      }
+    };
 
     const colorChips = h('div', { class: 'chips' });
     const paintColorChips = () => {
@@ -265,7 +342,7 @@ function editItem(item, { isNew = false } = {}) {
         if (found.length) {
           f.colors.value = found.join(', ');
           paintColorChips();
-          status.replaceChildren(h('p', { class: 'hint' }, `Colori riconosciuti: ${found.join(', ')}. Ora scegli categoria e tipo.`));
+          status.replaceChildren(h('p', { class: 'hint' }, `Colori riconosciuti: ${found.join(', ')}.`));
         } else {
           status.replaceChildren(h('p', { class: 'hint' }, 'Scegli categoria, tipo e colori.'));
         }
@@ -309,11 +386,13 @@ function editItem(item, { isNew = false } = {}) {
       sheetHead(isNew ? 'Nuovo capo' : 'Dettagli capo', close),
       preview,
       status,
+      guessSlot,
       isNew ? null : h('p', { class: 'stat' },
         item.timesWorn ? `Indossato ${item.timesWorn} ${item.timesWorn === 1 ? 'volta' : 'volte'}, l'ultima il ${new Date(item.lastWorn).toLocaleDateString('it-IT')}` : 'Mai indossato finora'),
       h('div', { class: 'field' }, h('span', {}, 'Categoria'), categoryChips),
       typesSlot,
       field('Nome del capo', f.subcategory),
+      matchSlot,
       h('div', { class: 'field' }, h('span', {}, 'Colori'), colorChips, f.colors),
       h('div', { class: 'two' }, field('Fantasia', f.pattern), field('Materiale', f.material)),
       field('Formalità', f.formality),
@@ -324,9 +403,10 @@ function editItem(item, { isNew = false } = {}) {
       h('div', { class: 'row end' },
         isNew ? null : h('button', { class: 'btn danger', type: 'button', onclick: del }, 'Elimina'),
         isNew ? null : h('button', { class: 'btn', type: 'button', onclick: runColors }, 'Riconosci colori'),
+        isNew ? null : h('button', { class: 'btn', type: 'button', onclick: runGarment }, 'Riconosci capo'),
         h('button', { class: 'btn primary', type: 'button', onclick: save }, 'Salva')),
     ].filter(Boolean));
-    if (isNew) setTimeout(runColors, 0);
+    if (isNew) setTimeout(() => { runColors(); runGarment(); }, 0);
     return wrap;
   });
 }

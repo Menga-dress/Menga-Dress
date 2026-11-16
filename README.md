@@ -25,6 +25,8 @@ Lo stylist è in `web/js/stylist.js` e usa regole di stile, senza servizi estern
 
 I colori della foto sono riconosciuti in `web/js/colors.js` analizzando la parte centrale dell'immagine.
 
+Il tipo di capo (felpa, jeans, blazer…) è riconosciuto sul telefono in `web/js/riconosci.js` con il modello gratuito MobileCLIP S0 (`web/modello/`, circa 23 MB scaricati solo la prima volta, poi in cache) e [ONNX Runtime Web](https://onnxruntime.ai) in `web/vendor/ort/`. Nessuna chiave, nessun server. L'app poi collega il capo a quelli dei manichini (`MANNEQUIN` in `web/js/catalog.js`, uomo e donna) e segnala con ⚠ i capi che i manichini non hanno, indicando il più simile. Per cambiare i tipi riconosciuti: modifica `tools/modello/etichette.json` e fai push su un ramo; il workflow *Modello riconoscimento capi* rigenera `web/modello/`.
+
 ## Login e sincronizzazione (Supabase gratuito)
 
 Una volta sola:
