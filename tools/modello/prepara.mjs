@@ -22,12 +22,21 @@ delete labels._nota;
 const TEMPLATES = ['a photo of {}.', 'a product photo of {}.', '{} laid flat on a bed.', '{} on a hanger.', 'a photo of {} worn by a person.'];
 const norm = (v) => { const n = Math.hypot(...v); return v.map((x) => x / n); };
 
-async function textClasses(id) {
+// Colori della palette dell'app (catalog.js) → nomi in inglese per il modello.
+const COLORS = {
+  nero: ['black'], grigio: ['grey', 'dark grey'], 'grigio chiaro': ['light grey'], bianco: ['white', 'off-white'],
+  beige: ['beige', 'cream'], marrone: ['brown'], blu: ['royal blue', 'blue'], 'blu navy': ['navy blue'],
+  azzurro: ['light blue', 'sky blue'], denim: ['denim blue'], verde: ['green'], 'verde oliva': ['olive green', 'khaki green'],
+  rosso: ['red'], bordeaux: ['burgundy', 'maroon'], rosa: ['pink'], arancione: ['orange'], giallo: ['yellow'], viola: ['purple'],
+};
+const COLOR_TEMPLATES = ['a photo of {} clothing.', 'a {} garment.', 'a pair of {} shoes.', 'a {} shirt.', 'a pair of {} trousers.', 'a {} jacket.', 'a {} sweater.'];
+
+async function textClasses(id, map = labels, templates = TEMPLATES) {
   const tokenizer = await AutoTokenizer.from_pretrained(id);
   const text = await CLIPTextModelWithProjection.from_pretrained(id, { dtype: 'fp32' });
   const classes = [];
-  for (const [key, descs] of Object.entries(labels)) {
-    const prompts = descs.flatMap((d) => TEMPLATES.map((t) => t.replace('{}', d)));
+  for (const [key, descs] of Object.entries(map)) {
+    const prompts = descs.flatMap((d) => templates.map((t) => t.replace('{}', d)));
     const inputs = tokenizer(prompts, { padding: 'max_length', truncation: true });
     const { text_embeds } = await text(inputs);
     const dim = text_embeds.dims[1];
@@ -35,7 +44,7 @@ async function textClasses(id) {
     for (let i = 0; i < prompts.length; i++) {
       norm(Array.from(text_embeds.data.slice(i * dim, (i + 1) * dim))).forEach((x, k) => { mean[k] += x; });
     }
-    const [category, name] = key.split('|');
+    const [category, name] = key.includes('|') ? key.split('|') : [undefined, key];
     classes.push({ category, name, e: norm(mean).map((x) => Math.round(x * 1e5) / 1e5) });
   }
   return classes;
@@ -90,5 +99,14 @@ for (const cand of CANDIDATES) {
 if (!best) throw new Error('nessun modello funziona');
 console.log(`SCELTO ${best.id}:${best.dtype}`);
 fs.copyFileSync(best.file, path.join(OUT, 'immagini.onnx'));
-fs.writeFileSync(path.join(OUT, 'testi.json'), JSON.stringify({ model: best.id, dtype: best.dtype, classes: best.classes }));
+const colors = (await textClasses(best.id, COLORS, COLOR_TEMPLATES)).map(({ name, e }) => ({ name, e }));
+const vision = await CLIPVisionModelWithProjection.from_pretrained(best.id, { dtype: best.dtype });
+const processor = await AutoProcessor.from_pretrained(best.id);
+for (const t of images) {
+  const { image_embeds } = await vision(await processor(t.img));
+  const v = norm(Array.from(image_embeds.data));
+  const sc = colors.map((c) => ({ n: c.name, s: c.e.reduce((a, x, i) => a + x * v[i], 0) })).sort((a, b) => b.s - a.s);
+  console.log(`  colore [${t.term}] ${t.title.slice(5, 60)} → ${sc.slice(0, 3).map((x) => `${x.n} ${x.s.toFixed(3)}`).join(' | ')}`);
+}
+fs.writeFileSync(path.join(OUT, 'testi.json'), JSON.stringify({ model: best.id, dtype: best.dtype, classes: best.classes, colors }));
 fs.copyFileSync(path.join(env.cacheDir, best.id, 'preprocessor_config.json'), path.join(OUT, 'preprocessore.json'));

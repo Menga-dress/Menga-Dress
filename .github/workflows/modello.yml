@@ -21,6 +21,8 @@ jobs:
           node-version: 22
       - run: npm install --no-save @huggingface/transformers@3.7.6
       - run: node tools/modello/prepara.mjs
+        env:
+          CANDIDATI: ${{ vars.CANDIDATI || 'Xenova/mobileclip_s0:fp16' }}
       - name: Salva il modello nel ramo
         run: |
           git config user.name "github-actions[bot]"
