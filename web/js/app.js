@@ -10,7 +10,7 @@ import {
   mannequinMatch, currentGender,
 } from './catalog.js';
 
-const APP_VERSION = '33'; // da aumentare a ogni modifica, si vede nelle Impostazioni
+const APP_VERSION = '34'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
 
@@ -205,65 +205,133 @@ function sheetHead(title, close) {
 
 let wardrobeFilter = 'all';
 
+// Layout dell'armadio: 'scaffali' (righe per tipo da scorrere), 'griglia', 'lista'.
+const LAYOUTS = { scaffali: 'Scaffali', griglia: 'Griglia', lista: 'Lista' };
+let wardrobeLayout = (() => { try { return localStorage.getItem('menga-armadio') || 'scaffali'; } catch { return 'scaffali'; } })();
+let wardrobeSearch = '';
+let wardrobeSort = 'tipo';
+const SORTS = { tipo: 'Tipo', colore: 'Colore', recenti: 'Recenti', usati: 'Più indossati' };
+const ORDER = ['outerwear', 'top', 'dress', 'bottom', 'shoes', 'accessory'];
+
+const LAYOUT_ICONS = {
+  scaffali: '<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M3 4h18v2H3zm0 5h5v5H3zm7 0h5v5h-5zm7 0h4v5h-4zM3 17h18v2H3z"/></svg>',
+  griglia: '<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M3 3h5v5H3zm6.5 0h5v5h-5zM16 3h5v5h-5zM3 9.5h5v5H3zm6.5 0h5v5h-5zm6.5 0h5v5h-5zM3 16h5v5H3zm6.5 0h5v5h-5zm6.5 0h5v5h-5z"/></svg>',
+  lista: '<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M3 4h5v5H3zm7 1h11v3H10zM3 15h5v5H3zm7 1h11v3H10z"/></svg>',
+};
+
+function colorDots(it) {
+  return (it.colors || []).filter((c) => PALETTE[c]).map((c) => h('span', { class: 'dot', title: c, style: `background: rgb(${PALETTE[c].join(',')})` }));
+}
+
+function wardrobeTile(it) {
+  const m = mannequinMatch(it.category, it.subcategory);
+  return h('button', { class: 'tile', type: 'button', onclick: () => editItem(it) },
+    h('img', { src: imgURL(it), alt: describeItem(it), loading: 'lazy' }),
+    m?.same === false ? h('span', { class: 'tile-warn', title: 'Non c\'è sui manichini' }, '⚠') : null,
+    h('span', { class: 'tag' }, colorDots(it).slice(0, 1), it.subcategory || CATEGORIES[it.category] || 'Capo'));
+}
+
+function wardrobeRow(it) {
+  const m = mannequinMatch(it.category, it.subcategory);
+  const status = !m ? h('span', { class: 'st muted' }, 'Tipo libero')
+    : m.same ? h('span', { class: 'st ok' }, '✓ Manichino')
+      : h('span', { class: 'st warn' }, m.garment ? `⚠ Come ${m.garment}` : '⚠ Non sul manichino');
+  return h('button', { class: 'wrow', type: 'button', onclick: () => editItem(it) },
+    h('img', { src: imgURL(it), alt: describeItem(it), loading: 'lazy' }),
+    h('span', { class: 'wrow-body' },
+      h('strong', {}, it.subcategory || CATEGORIES[it.category] || 'Capo'),
+      h('span', { class: 'wrow-colors' }, colorDots(it), (it.colors || []).join(', ') || 'colore non indicato'),
+      h('span', { class: 'wrow-meta' }, it.timesWorn ? `Indossato ${it.timesWorn} ${it.timesWorn === 1 ? 'volta' : 'volte'}` : 'Mai indossato', it.brand ? ` · ${it.brand}` : '')),
+    status);
+}
+
 async function renderWardrobe() {
   titleEl.textContent = 'Il mio armadio';
   const items = (await db.getAll('items')).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
   view.replaceChildren();
-
-  // Ordine "dalla testa ai piedi", con il numero di capi per gruppo.
-  const ORDER = ['outerwear', 'top', 'dress', 'bottom', 'shoes', 'accessory'];
-  const count = (cat) => items.filter((i) => i.category === cat).length;
-  const filters = { all: `Tutti · ${items.length}` };
-  for (const cat of ORDER) if (count(cat)) filters[cat] = `${CATEGORIES[cat]} · ${count(cat)}`;
-  if (wardrobeFilter !== 'all' && !filters[wardrobeFilter]) wardrobeFilter = 'all';
 
   if (!items.length) {
     view.append(h('div', { class: 'empty' },
       h('strong', {}, 'Il tuo armadio è vuoto'),
       'Tocca + per fotografare il primo capo: l\'app riconosce tipo e colori e lo collega ai manichini.'));
   } else {
-    view.append(chipGroup(filters, wardrobeFilter, {
-      scroll: true,
-      onChange: (v) => { wardrobeFilter = v; renderWardrobe(); },
-    }));
-    const shown = wardrobeFilter === 'all' ? items : items.filter((i) => i.category === wardrobeFilter);
-    // Capi che i manichini non hanno uguali: segnalati con un bollino.
-    const missing = shown.filter((it) => mannequinMatch(it.category, it.subcategory)?.same === false);
-    if (missing.length) {
-      const kinds = [...new Map(missing.map((it) => [`${it.category}|${it.subcategory}`, it])).values()];
-      view.append(h('div', { class: 'match warn' },
-        h('strong', {}, `⚠ Manichini da creare (${currentGender() === 'donna' ? 'donna' : 'uomo'})`),
-        `${missing.length} ${missing.length === 1 ? 'capo non ha' : 'capi non hanno'} lo stesso capo sui manichini. Tocca un tipo per sapere come creare il manichino:`,
-        h('div', { class: 'chips' }, kinds.map((it) => h('button', {
-          type: 'button', class: 'chip', onclick: () => showNewMannequin(it.category, it.subcategory),
-        }, it.subcategory)))));
-    }
-    const tile = (it) => {
-      const m = mannequinMatch(it.category, it.subcategory);
-      const rgb = PALETTE[it.colors?.[0]];
-      return h('button', { class: 'tile', type: 'button', onclick: () => editItem(it) },
-        h('img', { src: imgURL(it), alt: describeItem(it), loading: 'lazy' }),
-        m?.same === false ? h('span', { class: 'tile-warn', title: 'Non c\'è sui manichini' }, '⚠') : null,
-        h('span', { class: 'tag' },
-          rgb ? h('span', { class: 'dot', style: `background: rgb(${rgb.join(',')})` }) : null,
-          it.subcategory || CATEGORIES[it.category] || 'Capo'));
-    };
-    // Dentro ogni gruppo: per tipo, poi per colore.
+    // Barra in alto: quanti capi, avviso manichini (compatto) e scelta del layout.
+    const missing = items.filter((it) => mannequinMatch(it.category, it.subcategory)?.same === false);
+    const kinds = [...new Map(missing.map((it) => [`${it.category}|${it.subcategory}`, it])).values()];
+    const switcher = h('div', { class: 'seg', role: 'group', 'aria-label': 'Layout' },
+      Object.entries(LAYOUTS).map(([k, label]) => h('button', {
+        type: 'button', class: 'seg-btn', 'aria-pressed': String(wardrobeLayout === k), title: label, 'aria-label': label,
+        html: LAYOUT_ICONS[k],
+        onclick: () => { wardrobeLayout = k; try { localStorage.setItem('menga-armadio', k); } catch { /* niente */ } renderWardrobe(); },
+      })));
+    view.append(h('div', { class: 'wbar' },
+      h('span', { class: 'wbar-count' }, `${items.length} ${items.length === 1 ? 'capo' : 'capi'}`),
+      kinds.length ? h('button', {
+        type: 'button', class: 'pill warn',
+        onclick: () => openDialog((close) => h('div', { class: 'sheet' },
+          sheetHead('Manichini da creare', close),
+          h('p', { class: 'hint' }, `Questi tipi non ci sono sui manichini ${currentGender()}. Tocca un tipo per avere il testo per crearlo.`),
+          h('div', { class: 'chips' }, kinds.map((it) => h('button', {
+            type: 'button', class: 'chip', onclick: () => showNewMannequin(it.category, it.subcategory),
+          }, `${it.subcategory} · ${missing.filter((x) => x.subcategory === it.subcategory).length}`))))),
+      }, `⚠ ${kinds.length} da creare`) : null,
+      switcher));
+
     const byType = (a, b) => (a.subcategory || '').localeCompare(b.subcategory || '', 'it')
       || (a.colors?.[0] || '').localeCompare(b.colors?.[0] || '', 'it');
-    const groups = (wardrobeFilter === 'all' ? [...ORDER, ''] : [wardrobeFilter])
-      .map((cat) => [cat, shown.filter((i) => (cat ? i.category === cat : !ORDER.includes(i.category))).sort(byType)])
-      .filter(([, list]) => list.length);
-    for (const [cat, list] of groups) {
-      // Riassunto dei tipi del gruppo, es. "2 Jeans · 1 Chino".
-      const types = {};
-      for (const it of list) { const k = it.subcategory || 'Altro'; types[k] = (types[k] || 0) + 1; }
-      view.append(h('section', { class: 'wgroup' },
-        h('div', { class: 'wgroup-head' },
-          h('h2', {}, CATEGORIES[cat] || 'Senza categoria'),
-          h('span', { class: 'wgroup-count' }, String(list.length))),
-        h('p', { class: 'wgroup-types' }, Object.entries(types).map(([k, n]) => `${n} ${k}`).join(' · ')),
-        h('div', { class: 'grid' }, list.map(tile))));
+    const groupsOf = (list) => [...ORDER, '']
+      .map((cat) => [cat, list.filter((i) => (cat ? i.category === cat : !ORDER.includes(i.category))).sort(byType)])
+      .filter(([, l]) => l.length);
+
+    if (wardrobeLayout === 'scaffali') {
+      // Una riga da scorrere per ogni gruppo, dalla testa ai piedi.
+      for (const [cat, list] of groupsOf(items)) {
+        view.append(h('section', { class: 'shelf' },
+          h('button', {
+            type: 'button', class: 'shelf-head',
+            onclick: () => { wardrobeFilter = cat || 'all'; wardrobeLayout = 'griglia'; renderWardrobe(); },
+          }, h('h2', {}, CATEGORIES[cat] || 'Senza categoria'), h('span', { class: 'wgroup-count' }, String(list.length)), h('span', { class: 'shelf-more' }, 'Vedi tutti ›')),
+          h('div', { class: 'shelf-row' }, list.map(wardrobeTile))));
+      }
+    } else {
+      // Griglia e lista: filtri per gruppo, ricerca e ordine.
+      const count = (cat) => items.filter((i) => i.category === cat).length;
+      const filters = { all: `Tutti · ${items.length}` };
+      for (const cat of ORDER) if (count(cat)) filters[cat] = `${CATEGORIES[cat]} · ${count(cat)}`;
+      if (wardrobeFilter !== 'all' && !filters[wardrobeFilter]) wardrobeFilter = 'all';
+      view.append(chipGroup(filters, wardrobeFilter, { scroll: true, onChange: (v) => { wardrobeFilter = v; renderWardrobe(); } }));
+      const search = h('input', { type: 'search', class: 'wsearch', placeholder: 'Cerca: blazer, blu, Zara…', value: wardrobeSearch });
+      const sort = select(SORTS, wardrobeSort);
+      view.append(h('div', { class: 'wtools' }, search, sort));
+      const results = h('div');
+      view.append(results);
+      const paint = () => {
+        const q = wardrobeSearch.trim().toLowerCase();
+        let list = wardrobeFilter === 'all' ? items : items.filter((i) => i.category === wardrobeFilter);
+        if (q) list = list.filter((it) => [it.subcategory, CATEGORIES[it.category], ...(it.colors || []), it.brand, it.notes, it.material].join(' ').toLowerCase().includes(q));
+        const cmp = {
+          tipo: byType,
+          colore: (a, b) => (a.colors?.[0] || '').localeCompare(b.colors?.[0] || '', 'it') || byType(a, b),
+          recenti: (a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''),
+          usati: (a, b) => (b.timesWorn || 0) - (a.timesWorn || 0),
+        }[wardrobeSort];
+        results.replaceChildren();
+        if (!list.length) { results.append(h('div', { class: 'empty' }, 'Nessun capo trovato.')); return; }
+        const make = wardrobeLayout === 'lista' ? wardrobeRow : wardrobeTile;
+        const box = (l) => h('div', { class: wardrobeLayout === 'lista' ? 'wlist' : 'grid grid3' }, l.map(make));
+        if (wardrobeSort === 'tipo' && wardrobeFilter === 'all' && !q) {
+          for (const [cat, l] of groupsOf(list)) {
+            results.append(h('section', { class: 'wgroup' },
+              h('div', { class: 'wgroup-head' }, h('h2', {}, CATEGORIES[cat] || 'Senza categoria'), h('span', { class: 'wgroup-count' }, String(l.length))),
+              box(l)));
+          }
+        } else {
+          results.append(box(list.slice().sort(cmp)));
+        }
+      };
+      search.addEventListener('input', () => { wardrobeSearch = search.value; paint(); });
+      sort.addEventListener('change', () => { wardrobeSort = sort.value; paint(); });
+      paint();
     }
   }
 

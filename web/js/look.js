@@ -685,6 +685,7 @@ function photoColors(pieces, occasion, base) {
 // Suola delle scarpe: in ogni colonna la scarpa va dall'alto fin dove il tessuto diventa di colpo
 // più scuro (sotto c'è il riflesso sul piedistallo); il bordo si ammorbidisce con le colonne vicine.
 // Calcolata una volta per immagine.
+const SHOE_SOLE = false;
 const soles = new WeakMap();
 function soleMask(zone) {
   if (soles.has(zone)) return soles.get(zone);
@@ -729,7 +730,8 @@ function fabric(spec, x, y, z, sole) {
   const { c, c2, pattern } = spec;
   const ink = c2 || (lum(c) > 0.55 ? darken(c, 0.45) : lighten(c, 0.55));
   if (z === 4) {
-    if (!c2) return c;
+    // Suola di un altro colore: spenta per ora (bordi imprecisi su alcuni manichini).
+    if (!c2 || !SHOE_SOLE) return c;
     const b = sole.bottom[x];
     const h = b - sole.top[x];
     return b >= 0 && y > b - Math.max(6, Math.min(20, h * 0.22)) && y <= b ? c2 : c;
@@ -758,7 +760,7 @@ function paintPhoto(canvas, { base, zone }, colors) {
     const v = colors[z];
     tint[z] = Array.isArray(v) ? lift(v) : v && { ...v, c: lift(v.c), c2: lift(v.c2) };
   }
-  const sole = soleMask(zone);
+  const sole = SHOE_SOLE ? soleMask(zone) : null;
   for (let i = 0; i < d.length; i += 4) {
     const z = Math.round(zone[i] / 60);
     const a = zone[i + 2] / 255;
