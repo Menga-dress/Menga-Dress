@@ -570,6 +570,8 @@ function choosePhoto(pieces, occasion) {
   for (const ch of seed) hash = (hash * 31 + ch.charCodeAt(0)) | 0;
   const pick = (list) => list[Math.abs(hash) % list.length];
   const tshirt = top && !/camicia/.test(top);
+  // Pantaloni lisci (chino, jeans, eleganti…): niente manichini con i cargo a tasconi.
+  const slim = bottom && !/cargo|sportiv|legging|bermuda|tuta/.test(bottom);
   if (isDonna()) {
     const dress = sub('dress');
     const gown = dress && !/completo|tuta/.test(dress);
@@ -579,7 +581,10 @@ function choosePhoto(pieces, occasion) {
       case 'serata': return gown || !top ? 'donna-vestito' : 'donna-elegante';
       case 'sport': return 'donna-sport';
       case 'viaggio': return 'donna-viaggio';
-      default: return outer ? 'donna-casual' : pick(['donna-casual', 'donna-camicia']);
+      default:
+        if (slim) return 'donna-camicia';
+        if (/cargo/.test(bottom)) return 'donna-casual';
+        return outer ? 'donna-casual' : pick(['donna-casual', 'donna-camicia']);
     }
   }
   switch (occasion) {
@@ -599,6 +604,8 @@ function choosePhoto(pieces, occasion) {
       return 'viaggio';
     default: // tempo libero
       if (blazer) return 'blazer-tshirt';
+      // Con pantaloni lisci solo manichini a gamba dritta: camicia/giacca aperta + t-shirt.
+      if (slim) return 'camicia-aperta';
       if (/felpa|maglione|cardigan/.test(top) && !outer) return pick(['felpa', 'felpa-zip']);
       if (outer) return 'casual';
       return pick(['felpa-zip', 'casual']);
