@@ -2,7 +2,7 @@
 // proposti. Ogni capo ha la sua forma (camicia, felpa, blazer, jeans, sneakers...) e il colore del
 // capo vero, con sopra luci, ombre e pieghe che danno volume (effetto 3D) qualunque sia il colore.
 // Se manca un capo si usa quello tipico dell'occasione.
-import { PALETTE } from './catalog.js';
+import { PALETTE, mannequinMatch, currentGender } from './catalog.js';
 
 const VW = 400;
 const VH = 600;
@@ -704,4 +704,47 @@ export function lookView(pieces, occasion) {
     .then((px) => paintPhoto(canvas, px, photoColors(pieces, occasion, base)))
     .catch(() => box.replaceChildren(lookSvg(pieces, occasion)));
   return box;
+}
+
+// ---------- manichino del singolo capo ----------
+// Scheda del capo: il manichino con tutto in colore neutro e solo il capo colorato.
+// Per ogni capo dei manichini: immagine da usare e zone che occupa (1 giacca, 2 maglia, 3 pantaloni, 4 scarpe).
+const SINGLE = {
+  uomo: {
+    Blazer: ['blazer', [1]], Giubbotto: ['casual', [1]], Camicia: ['camicia-aperta', [1]],
+    'Camicia elegante': ['blazer-lavoro', [2]], 'T-shirt': ['casual', [2]], Felpa: ['felpa', [2]],
+    'Pantaloni eleganti': ['blazer', [3]], Chino: ['blazer-lavoro', [3]], Jeans: ['blazer-tshirt', [3]],
+    Cargo: ['casual', [3]], 'Pantaloni sportivi': ['sport', [3]],
+    Completo: ['blazer', [1, 3]], Tuta: ['sport', [1, 3]], Sneakers: ['casual', [4]],
+  },
+  donna: {
+    Blazer: ['donna-lavoro', [1]], Giubbotto: ['donna-casual', [1]], Piumino: ['donna-viaggio', [1]],
+    Camicia: ['donna-camicia', [1]], Camicetta: ['donna-camicia', [1]], Top: ['donna-elegante', [2]],
+    'T-shirt': ['donna-casual', [2]], 'Pantaloni eleganti': ['donna-lavoro', [3]], Cargo: ['donna-casual', [3]],
+    'Pantaloni sportivi': ['donna-sport', [3]], Vestito: ['donna-vestito', [1]], 'Abito elegante': ['donna-vestito', [1]],
+    Sneakers: ['donna-casual', [4]], 'Décolleté': ['donna-lavoro', [4]],
+  },
+};
+
+// Restituisce { view, garment, same } oppure null se il capo non ha un posto sul manichino.
+export function garmentView(category, name, colors) {
+  const m = mannequinMatch(category, name);
+  if (!m?.garment) return null;
+  const spec = SINGLE[currentGender()][m.garment];
+  if (!spec) return null;
+  const [base, zones] = spec;
+  // I capi molto scuri un po' più chiari, se no sul manichino nero non si distinguono.
+  const c = (colorOf(colors?.[0]) || [150, 150, 150]).map((v) => Math.max(v, 58));
+  const neutral = lum(c) > 0.7 ? [118, 118, 116] : [212, 210, 205];
+  const paint = {};
+  for (const z of [1, 2, 3, 4]) paint[z] = zones.includes(z) ? c : neutral;
+  const box = document.createElement('div');
+  box.className = 'look-view';
+  const canvas = document.createElement('canvas');
+  canvas.width = PW; canvas.height = PH;
+  canvas.setAttribute('role', 'img');
+  canvas.setAttribute('aria-label', `Il capo sul manichino: ${m.garment}`);
+  box.append(canvas);
+  loadPhoto(base).then((px) => paintPhoto(canvas, px, paint)).catch(() => box.remove());
+  return { view: box, garment: m.garment, same: m.same };
 }
