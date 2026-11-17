@@ -103,8 +103,13 @@ export async function exportBackup() {
   for (const it of items) {
     itemsOut.push({ ...it, image: it.image ? await blobToDataURL(it.image) : null });
   }
+  const manichini = [];
+  for (const m of (await getKV('manichini')) || []) {
+    manichini.push({ ...m, base: await blobToDataURL(m.base), zone: await blobToDataURL(m.zone) });
+  }
   return {
     app: 'dress',
+    manichini,
     version: 1,
     exportedAt: new Date().toISOString(),
     profile: profile || null,
@@ -122,5 +127,13 @@ export async function importBackup(data) {
   }
   for (const o of data.outfits || []) await put('outfits', o);
   if (data.profile) await setKV('profile', data.profile);
+  if (Array.isArray(data.manichini) && data.manichini.length) {
+    const have = (await getKV('manichini')) || [];
+    for (const m of data.manichini) {
+      if (have.some((x) => x.id === m.id)) continue;
+      have.push({ ...m, base: await dataURLToBlob(m.base), zone: await dataURLToBlob(m.zone) });
+    }
+    await setKV('manichini', have);
+  }
   return data.items.length;
 }

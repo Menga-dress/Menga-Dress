@@ -2,16 +2,17 @@ import * as db from './db.js';
 import { getWeather } from './weather.js';
 import { detectColors } from './colors.js';
 import { suggestOutfits, ideaName } from './stylist.js';
-import { lookView, garmentView } from './look.js';
+import { lookView, garmentView, previewPhoto, forgetPhoto } from './look.js';
+import { prepareMannequin, loadCustom, saveCustom, removeCustom } from './manichini.js';
 import { analyzeGarment, isModelCached, rememberGarment, forgetGarment, learnFromWardrobe } from './riconosci.js';
 import { removeBackground } from './sfondo.js';
 import * as sync from './sync.js';
 import {
   CATEGORIES, SEASONS, STYLES, PATTERNS, MOODS, OCCASIONS, FORMALITY, SUBTYPES, PALETTE, describeItem,
-  mannequinMatch, currentGender,
+  mannequinMatch, currentGender, CUSTOM, ZONE_CATEGORIES, zoneOfCategory,
 } from './catalog.js';
 
-const APP_VERSION = '35'; // da aumentare a ogni modifica, si vede nelle Impostazioni
+const APP_VERSION = '36'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
 
@@ -129,11 +130,11 @@ function showNewMannequin(category, name) {
   const prompt = newMannequinPrompt(category, name);
   openDialog((close) => h('div', { class: 'sheet' },
     sheetHead(`Nuovo manichino: ${name}`, close),
-    h('p', {}, `I manichini ${currentGender()} non hanno ${articolo(name)}. Puoi crearne uno con ChatGPT (o un'altra app di immagini) e mandarlo in chat: lo preparo e lo aggiungo all'app.`),
+    h('p', {}, `I manichini ${currentGender()} non hanno ${articolo(name)}. Puoi crearne uno con ChatGPT o Gemini e caricarlo qui: l'app lo prepara da sola.`),
     h('ol', { class: 'steps' },
       h('li', {}, 'Copia il testo qui sotto e incollalo in ChatGPT.'),
       h('li', {}, `Controlla che ${articolo(name)} sia di un solo colore pieno (${ZONE_COLOR[category] || 'ROSSO puro'}), come gli altri capi.`),
-      h('li', {}, 'Mandami l\'immagine nella chat di Menga Dress.')),
+      h('li', {}, 'Salva l\'immagine sul telefono e tocca "Carica il manichino".')),
     h('textarea', { class: 'prompt', readonly: true, rows: 7 }, prompt),
     h('div', { class: 'row end' },
       h('button', {
@@ -141,7 +142,206 @@ function showNewMannequin(category, name) {
         onclick: async () => {
           try { await navigator.clipboard.writeText(prompt); toast('Testo copiato'); } catch { toast('Tieni premuto sul testo per copiarlo'); }
         },
-      }, 'Copia il testo'))));
+      }, 'Copia il testo'),
+      h('button', { type: 'button', class: 'btn primary', onclick: () => { close(); openMannequinEditor({ category, name }); } }, 'Carica il manichino'))));
+}
+
+// ---------- manichino creato da te ----------
+const ZONE_LABEL = { 1: 'Giacca', 2: 'Maglia', 3: 'Pantaloni', 4: 'Scarpe' };
+const ZONE_DOT = { 1: '#e65050', 2: '#5ac86e', 3: '#5a82f0', 4: '#f0d246' };
+const ZONE_DEFAULT = { 1: 'Giubbotto', 2: 'T-shirt', 3: 'Jeans', 4: 'Sneakers' };
+// Colori neutri per provare il manichino; la zona "da provare" prende il colore scelto.
+const TRY_BASE = { 1: 'blu navy', 2: 'bianco', 3: 'denim', 4: 'bianco' };
+const TRY_COLORS = ['bordeaux', 'blu navy', 'grigio', 'verde oliva', 'beige', 'nero'];
+const MIN_ZONE = 1500; // pixel sotto i quali una zona non c'è
+
+function openMannequinEditor({ category, name, onSaved } = {}) {
+  openDialog((close) => {
+    const wrap = h('div', { class: 'sheet' });
+    const fileIn = h('input', { type: 'file', accept: 'image/*', hidden: true });
+    const body = h('div');
+    let prepared = null;
+
+    const pick = () => fileIn.click();
+    const intro = () => body.replaceChildren(
+      h('p', {}, 'Carica l\'immagine del manichino fatta con ChatGPT o Gemini, con i capi a colori pieni: giacca rossa, maglia verde, pantaloni blu, scarpe gialle.'),
+      category ? h('p', { class: 'hint' }, `${articolo(name)[0].toUpperCase()}${articolo(name).slice(1)} va in ${ZONE_COLOR[category] || 'ROSSO puro'}.`) : null,
+      h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn primary', onclick: pick }, 'Scegli l\'immagine'),
+        category ? h('button', { type: 'button', class: 'btn', onclick: () => { close(); showNewMannequin(category, name); } }, 'Testo per crearlo') : null),
+    );
+
+    fileIn.addEventListener('change', async () => {
+      const file = fileIn.files?.[0];
+      fileIn.value = '';
+      if (!file) return;
+      body.replaceChildren(h('div', { class: 'status' }, h('span', { class: 'spinner' }), 'Preparo il manichino…'));
+      try {
+        prepared = await prepareMannequin(file);
+      } catch (e) {
+        console.warn('manichino', e);
+        toast('Non riesco a leggere l\'immagine.');
+        intro();
+        return;
+      }
+      showPrepared(file);
+    });
+
+    const showPrepared = (file) => {
+      const zones = [1, 2, 3, 4].filter((z) => prepared.counts[z] >= MIN_ZONE);
+      prepared.overlay.className = 'pair-canvas';
+      const pair = h('div', { class: 'pair' },
+        h('figure', {}, h('img', { class: 'preview', src: URL.createObjectURL(file), alt: 'La tua immagine' }), h('figcaption', {}, 'La tua immagine')),
+        h('figure', {}, prepared.overlay, h('figcaption', {}, 'Zone trovate')));
+      const zoneList = h('div', { class: 'zones' }, [1, 2, 3, 4].map((z) => h('div', { class: 'z' + (zones.includes(z) ? '' : ' off') },
+        h('span', { class: 'dot', style: `background:${ZONE_DOT[z]}` }), ZONE_LABEL[z],
+        h('small', {}, zones.includes(z) ? '✓' : 'non c\'è'))));
+      if (!zones.length) {
+        body.replaceChildren(pair, zoneList,
+          h('p', { class: 'match warn' }, 'Non trovo capi a colori pieni. Controlla che giacca, maglia, pantaloni e scarpe siano rosso, verde, blu e giallo puri.'),
+          h('button', { type: 'button', class: 'btn', onclick: pick }, 'Scegli un\'altra immagine'));
+        return;
+      }
+      // Che capi sono: un tipo per ogni zona trovata.
+      const presetZone = category ? zoneOfCategory(category) : 0;
+      const selects = {};
+      for (const z of zones) {
+        const sel = h('select');
+        for (const cat of ZONE_CATEGORIES[z]) {
+          const group = h('optgroup', { label: CATEGORIES[cat] });
+          for (const tp of SUBTYPES[cat] || []) group.append(h('option', { value: tp.name }, tp.name));
+          sel.append(group);
+        }
+        sel.value = z === presetZone ? name : ZONE_DEFAULT[z];
+        if (!sel.value) sel.selectedIndex = 0;
+        selects[z] = sel;
+      }
+      const gender = chipGroup({ uomo: 'Uomo', donna: 'Donna' }, currentGender());
+      const occasions = chipGroup(OCCASIONS, ['tempo_libero'], { multiple: true });
+      const nameIn = h('input', { type: 'text', placeholder: 'es. Maglione e cargo' });
+      const autoName = () => {
+        const parts = zones.map((z) => selects[z].value);
+        const main = presetZone && selects[presetZone] ? selects[presetZone].value : parts[0];
+        const other = parts.find((x) => x !== main && /pantaloni|jeans|cargo|chino|leggings|bermuda|gonna|shorts/i.test(x));
+        return other ? `${main} e ${other.toLowerCase()}` : main;
+      };
+      let nameTouched = false;
+      nameIn.value = autoName();
+      nameIn.addEventListener('input', () => { nameTouched = true; });
+
+      // Prova colori.
+      let focus = presetZone && zones.includes(presetZone) ? presetZone : zones.includes(2) ? 2 : zones[0];
+      let tryColor = TRY_COLORS[0];
+      const canvas = h('canvas', { class: 'pair-canvas', 'aria-label': 'Anteprima del manichino' });
+      const paint = () => {
+        const p = {};
+        for (const z of zones) p[z] = PALETTE[z === focus ? tryColor : TRY_BASE[z]];
+        previewPhoto(canvas, prepared.base, prepared.zone, p).catch(() => {});
+      };
+      const swatches = h('div', { class: 'chips' }, TRY_COLORS.map((c) => {
+        const [r, g, b] = PALETTE[c];
+        return h('button', {
+          type: 'button', class: 'chip', 'aria-pressed': String(c === tryColor),
+          onclick: (e) => {
+            tryColor = c;
+            for (const el of swatches.children) el.setAttribute('aria-pressed', 'false');
+            e.currentTarget.setAttribute('aria-pressed', 'true');
+            paint();
+          },
+        }, h('span', { class: 'swatch', style: `background: rgb(${r},${g},${b})` }), c);
+      }));
+      const focusChips = chipGroup(Object.fromEntries(zones.map((z) => [String(z), ZONE_LABEL[z]])), String(focus), {
+        onChange: (v) => { focus = Number(v); paint(); },
+      });
+      for (const z of zones) selects[z].addEventListener('change', () => { selects[z].dataset.touched = '1'; if (!nameTouched) nameIn.value = autoName(); });
+      paint();
+      // Il tipo degli altri capi si prova a indovinare dalla forma (stesso riconoscimento dell'armadio).
+      (async () => {
+        for (const z of zones) {
+          if (z === presetZone || !prepared.crops?.[z]) continue;
+          try {
+            const { types } = await analyzeGarment(prepared.crops[z], 80);
+            const best = types.find((t) => ZONE_CATEGORIES[z].includes(t.category));
+            if (best && !selects[z].dataset.touched) {
+              selects[z].value = best.name;
+              if (!nameTouched) nameIn.value = autoName();
+            }
+          } catch { /* resta il tipo proposto */ }
+        }
+      })();
+
+      const save = async () => {
+        const occ = occasions.value();
+        if (!occ.length) { toast('Scegli almeno un\'occasione.'); return; }
+        const garments = { 1: null, 2: null, 3: null, 4: null };
+        for (const z of zones) garments[z] = selects[z].value;
+        const m = {
+          id: db.newId(), name: nameIn.value.trim() || autoName(), gender: gender.value(), occasions: occ,
+          garments, base: prepared.base, zone: prepared.zone, createdAt: new Date().toISOString(),
+        };
+        try {
+          await saveCustom(m);
+        } catch (e) {
+          console.warn('manichino', e);
+          toast('Non sono riuscito a salvare il manichino.');
+          return;
+        }
+        close();
+        toast(`Manichino "${m.name}" aggiunto`);
+        onSaved?.();
+        route();
+      };
+
+      body.replaceChildren(pair, zoneList,
+        h('h2', {}, 'Che capi mostra?'),
+        ...zones.map((z) => h('label', { class: 'field' }, h('span', {}, ZONE_LABEL[z]), selects[z])),
+        field('Nome', nameIn),
+        h('div', { class: 'field' }, h('span', {}, 'Per'), gender),
+        h('div', { class: 'field' }, h('span', {}, 'Occasioni'), occasions),
+        h('h2', {}, 'Prova i colori'),
+        h('p', { class: 'hint' }, 'Tocca un colore per vedere se luci e ombre vengono bene.'),
+        zones.length > 1 ? focusChips : null,
+        swatches,
+        h('div', { class: 'try' }, canvas),
+        h('div', { class: 'row end' },
+          h('button', { type: 'button', class: 'btn', onclick: pick }, 'Cambia immagine'),
+          h('button', { type: 'button', class: 'btn primary', onclick: save }, 'Salva manichino')));
+    };
+
+    intro();
+    wrap.append(sheetHead('Nuovo manichino', close), body, fileIn);
+    return wrap;
+  });
+}
+
+// Elenco nelle Impostazioni: i manichini creati da te, con anteprima e "Togli".
+function mannequinSection() {
+  const box = h('div');
+  const paintList = () => {
+    box.replaceChildren(
+      h('p', { class: 'hint' }, `L'app ha già 11 manichini uomo e 8 donna. Qui aggiungi i tuoi, fatti con ChatGPT o Gemini: restano su questo telefono e sono nel backup.`),
+      h('div', { class: 'mlist' },
+        ...CUSTOM.map((c) => {
+          const cv = h('canvas', { 'aria-label': c.name });
+          const p = {};
+          for (const z of [1, 2, 3, 4]) if (c.garments?.[z]) p[z] = PALETTE[TRY_BASE[z]];
+          previewPhoto(cv, c.base, c.zone, p).catch(() => {});
+          return h('figure', {}, cv,
+            h('figcaption', {}, c.name, h('small', {}, ` · ${c.gender}`)),
+            h('button', {
+              type: 'button', class: 'linkbtn',
+              onclick: async () => {
+                if (!confirm(`Togliere il manichino "${c.name}"?`)) return;
+                await removeCustom(c.id);
+                forgetPhoto(`mio:${c.id}`);
+                paintList();
+                toast('Manichino tolto');
+              },
+            }, 'Togli'));
+        }),
+        h('button', { type: 'button', class: 'madd', onclick: () => openMannequinEditor({ onSaved: paintList }) }, h('span', {}, '+'), 'Aggiungi')));
+  };
+  paintList();
+  return box;
 }
 
 function newMannequinButton(category, name) {
@@ -945,6 +1145,7 @@ async function openSettings() {
       if (!file) return;
       try {
         const n = await db.importBackup(JSON.parse(await file.text()));
+        await loadCustom();
         toast(`Ripristinati ${n} capi`);
         close();
         route();
@@ -963,6 +1164,8 @@ async function openSettings() {
         h('button', { class: 'btn', type: 'button', onclick: () => fileIn.click() }, 'Ripristina backup')),
       fileIn,
       accountSection(close),
+      h('h2', {}, 'Manichini'),
+      mannequinSection(),
       h('h2', {}, 'Tema e manichino'),
       chipGroup(THEMES, document.documentElement.dataset.theme || 'uomo', { onChange: setTheme }),
       h('p', { class: 'hint' }, `Versione ${APP_VERSION}`),
@@ -1185,7 +1388,8 @@ function route() {
 
 document.getElementById('settings-btn').addEventListener('click', openSettings);
 window.addEventListener('hashchange', route);
-route();
+// I manichini creati da te servono già al primo disegno dell'armadio.
+loadCustom().catch(() => {}).then(route);
 db.askPersistence();
 initAccount();
 // L'app impara dai capi già salvati (in sottofondo, solo se il modello è già sul telefono).
