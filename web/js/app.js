@@ -12,7 +12,7 @@ import {
   mannequinMatch, currentGender, CUSTOM, ZONE_CATEGORIES, zoneOfCategory,
 } from './catalog.js';
 
-const APP_VERSION = '37'; // da aumentare a ogni modifica, si vede nelle Impostazioni
+const APP_VERSION = '38'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
 
@@ -130,7 +130,9 @@ function showNewMannequin(category, name) {
   const prompt = newMannequinPrompt(category, name);
   openDialog((close) => h('div', { class: 'sheet' },
     sheetHead(`Nuovo manichino: ${name}`, close),
-    h('p', {}, `I manichini ${currentGender()} non hanno ${articolo(name)}. Puoi crearne uno con ChatGPT o Gemini e caricarlo qui: l'app lo prepara da sola.`),
+    h('p', {}, mannequinMatch(category, name)?.same
+      ? `Crea con ChatGPT o Gemini un manichino con ${articolo(name)} e caricalo qui: l'app lo prepara da sola e per questo capo userà il tuo al posto di quello dell'app.`
+      : `I manichini ${currentGender()} non hanno ${articolo(name)}. Puoi crearne uno con ChatGPT o Gemini e caricarlo qui: l'app lo prepara da sola.`),
     h('ol', { class: 'steps' },
       h('li', {}, 'Tocca ChatGPT o Gemini: si apre col testo già pronto.'),
       h('li', {}, `Controlla che ${articolo(name)} sia di un solo colore pieno (${ZONE_COLOR[category] || 'ROSSO puro'}), come gli altri capi.`),
@@ -279,7 +281,7 @@ function openMannequinEditor({ category, name, onSaved } = {}) {
         for (const z of zones) garments[z] = selects[z].value;
         const m = {
           id: db.newId(), name: nameIn.value.trim() || autoName(), gender: gender.value(), occasions: occ,
-          garments, base: prepared.base, zone: prepared.zone, createdAt: new Date().toISOString(),
+          garments, main: presetZone && garments[presetZone] ? garments[presetZone] : null, base: prepared.base, zone: prepared.zone, createdAt: new Date().toISOString(),
         };
         try {
           await saveCustom(m);
@@ -291,6 +293,7 @@ function openMannequinEditor({ category, name, onSaved } = {}) {
         close();
         toast(`Manichino "${m.name}" aggiunto`);
         onSaved?.();
+        window.dispatchEvent(new Event('manichini'));
         route();
       };
 
@@ -357,8 +360,8 @@ async function openGemini(prompt) {
   window.open('https://gemini.google.com/app', '_blank', 'noopener');
 }
 
-function newMannequinButton(category, name) {
-  return h('div', {}, h('button', { type: 'button', class: 'btn small', onclick: () => showNewMannequin(category, name) }, 'Come creare il manichino'));
+function newMannequinButton(category, name, label = 'Come creare il manichino') {
+  return h('div', {}, h('button', { type: 'button', class: 'btn small', onclick: () => showNewMannequin(category, name) }, label));
 }
 
 // Distanza tra due colori come la vede l'occhio (Lab).
@@ -626,9 +629,15 @@ function editItem(item, { isNew = false } = {}) {
       if (!m) {
         box = h('div', { class: 'match warn' }, h('strong', {}, '⚠ Tipo non riconosciuto'),
           `"${name}" non è tra i tipi dell'app: scegli un tipo qui sopra per collegarlo a un capo dei ${who}.`);
+      } else if (m.same && m.custom) {
+        const mine = CUSTOM.find((c) => c.id === m.custom);
+        box = h('div', { class: 'match ok' }, h('strong', {}, `✓ Sul tuo manichino${mine ? ` "${mine.name}"` : ''}`),
+          'Se qualcosa non torna puoi rifarlo: quello nuovo prende il suo posto.',
+          newMannequinButton(category, name, 'Rifai il manichino'));
       } else if (m.same) {
         box = h('div', { class: 'match ok' }, h('strong', {}, `✓ Sui manichini: ${m.garment}`),
-          `I ${who} hanno lo stesso capo, l'anteprima lo mostra col suo colore.`);
+          `I ${who} hanno lo stesso capo, l'anteprima lo mostra col suo colore. Se sul manichino non viene bene, puoi crearne uno tuo per questo capo.`,
+          newMannequinButton(category, name, 'Crea un manichino per questo capo'));
       } else {
         box = h('div', { class: 'match warn' }, h('strong', {}, `⚠ Serve un nuovo manichino: i ${who} non hanno ${articolo(name)}`),
           m.garment ? `Per ora nell'anteprima appare come il capo più simile: ${m.garment}.` : 'Per ora nell\'anteprima non compare.',
@@ -645,6 +654,9 @@ function editItem(item, { isNew = false } = {}) {
 
     // Accanto alla foto: il manichino neutro con colorato solo questo capo.
     let lastLook = '';
+    // Manichino nuovo salvato mentre la scheda è aperta: si ridisegna.
+    const onMannequins = () => { lastLook = ''; paintMatch(); };
+    window.addEventListener('manichini', onMannequins);
     const paintMannequin = () => {
       const name = f.subcategory.value.trim();
       const colors = f.colors.value.split(',').map((x) => x.trim()).filter(Boolean);
