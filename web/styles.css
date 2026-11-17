@@ -325,3 +325,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
 .refphoto img { width: 84px; height: 110px; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); flex: none; background: var(--surface); }
 .refphoto .hint { margin: 0; }
 .refphoto a { color: var(--accent); }
+
+label.check { display: flex; align-items: center; gap: 8px; margin: 10px 0; }
+label.check[hidden] { display: none; }
+.mlist .linkbtn { display: block; margin: 0 auto; }

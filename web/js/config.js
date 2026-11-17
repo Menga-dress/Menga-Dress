@@ -6,3 +6,8 @@
 // Lasciati vuoti, l'app funziona come prima, solo sul telefono e senza login.
 export const SUPABASE_URL = '';
 export const SUPABASE_ANON_KEY = '';
+
+// Catalogo dei manichini pubblici (quelli pubblicati dall'amministratore, visibili a tutti).
+// Lasciati vuoti si usa il progetto Supabase qui sopra o quello collegato nelle Impostazioni.
+export const CATALOGO_URL = '';
+export const CATALOGO_KEY = '';

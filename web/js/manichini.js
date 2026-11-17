@@ -12,25 +12,135 @@ export const H = 960;
 const KEY = 'manichini';
 
 // ---------- archivio ----------
+// Due elenchi: i tuoi (kv 'manichini', solo su questo telefono) e quelli pubblici
+// dell'amministratore (kv 'manichini-pubblici', copia locale del catalogo su Supabase).
+// Nell'app si usano entrambi; i tuoi vengono prima.
+const SHARED = 'manichini-pubblici';
+
+async function refresh() {
+  let mine = []; let shared = [];
+  try { mine = (await db.getKV(KEY)) || []; } catch { /* niente */ }
+  try { shared = (await db.getKV(SHARED)) || []; } catch { /* niente */ }
+  const ids = new Set(mine.map((m) => m.id));
+  setCustomMannequins([...mine, ...shared.filter((m) => !ids.has(m.id)).map((m) => ({ ...m, shared: true }))]);
+  return mine;
+}
 
 export async function loadCustom() {
-  let list = [];
-  try { list = (await db.getKV(KEY)) || []; } catch { /* niente */ }
-  setCustomMannequins(list);
-  return list;
+  const mine = await refresh();
+  syncShared().catch((e) => console.warn('manichini pubblici', e));
+  return mine;
 }
 
 export async function saveCustom(m) {
   const list = ((await db.getKV(KEY)) || []).filter((x) => x.id !== m.id);
   list.push(m);
   await db.setKV(KEY, list);
-  setCustomMannequins(list);
+  await refresh();
 }
 
 export async function removeCustom(id) {
   const list = ((await db.getKV(KEY)) || []).filter((x) => x.id !== id);
   await db.setKV(KEY, list);
-  setCustomMannequins(list);
+  await refresh();
+}
+
+// ---------- catalogo pubblico (Supabase) ----------
+
+async function catalog() {
+  const conf = await import('./config.js');
+  if (conf.CATALOGO_URL && conf.CATALOGO_KEY) return { url: conf.CATALOGO_URL, key: conf.CATALOGO_KEY };
+  const sync = await import('./sync.js');
+  return sync.getConfig();
+}
+
+const publicFile = (cfg, name) => `${cfg.url}/storage/v1/object/public/manichini/${name}`;
+
+// Scarica i manichini pubblici nuovi o cambiati e li tiene sul telefono (vanno anche offline).
+let syncing = null;
+export function syncShared() {
+  if (!syncing) {
+    syncing = (async () => {
+      const cfg = await catalog();
+      if (!cfg) return false;
+      const res = await fetch(`${cfg.url}/rest/v1/manichini?select=id,data,modified`, { headers: { apikey: cfg.key, Authorization: `Bearer ${cfg.key}` } });
+      if (!res.ok) throw new Error(`catalogo ${res.status}`);
+      const rows = await res.json();
+      const have = (await db.getKV(SHARED)) || [];
+      const next = [];
+      let changed = rows.length !== have.length;
+      for (const r of rows) {
+        const old = have.find((x) => x.id === r.id);
+        if (old && old.modified === r.modified) { next.push(old); continue; }
+        const v = encodeURIComponent(r.modified);
+        const [base, zone] = await Promise.all([`${r.id}-base.jpg`, `${r.id}-zone.png`].map(async (n) => {
+          const f = await fetch(`${publicFile(cfg, n)}?v=${v}`);
+          if (!f.ok) throw new Error(`immagine ${n} ${f.status}`);
+          return f.blob();
+        }));
+        next.push({ ...r.data, id: r.id, modified: r.modified, base, zone });
+        changed = true;
+      }
+      if (changed) {
+        await db.setKV(SHARED, next);
+        await refresh();
+        window.dispatchEvent(new Event('manichini'));
+      }
+      return changed;
+    })().finally(() => { syncing = null; });
+  }
+  return syncing;
+}
+
+// Sei l'amministratore? (accesso fatto nello stesso progetto del catalogo e presente in "admins")
+export async function isAdmin() {
+  try {
+    const sync = await import('./sync.js');
+    const cfg = await catalog();
+    const mine = sync.getConfig();
+    if (!cfg || !mine || cfg.url !== mine.url) return false;
+    const user = await sync.currentUser();
+    if (!user) return false;
+    const sb = await sync.client();
+    const { data, error } = await sb.from('admins').select('user_id').eq('user_id', user.id);
+    return !error && data?.length > 0;
+  } catch { return false; }
+}
+
+const META = ['name', 'gender', 'occasions', 'garments', 'main', 'createdAt'];
+
+// Pubblica (o aggiorna) un tuo manichino per tutti gli utenti.
+export async function publishShared(m) {
+  const sync = await import('./sync.js');
+  const sb = await sync.client();
+  const up = async (name, blob, type) => {
+    const { error } = await sb.storage.from('manichini').upload(name, blob, { upsert: true, contentType: type });
+    if (error) throw error;
+  };
+  await up(`${m.id}-base.jpg`, m.base, 'image/jpeg');
+  await up(`${m.id}-zone.png`, m.zone, 'image/png');
+  const data = Object.fromEntries(META.map((k) => [k, m[k] ?? null]));
+  const { error } = await sb.from('manichini').upsert({ id: m.id, data, modified: new Date().toISOString() });
+  if (error) throw error;
+  const list = (await db.getKV(KEY)) || [];
+  const it = list.find((x) => x.id === m.id);
+  if (it) { it.published = true; await db.setKV(KEY, list); }
+  await refresh();
+}
+
+// Toglie un manichino dal catalogo pubblico (resta tra i tuoi).
+export async function unpublishShared(id) {
+  const sync = await import('./sync.js');
+  const sb = await sync.client();
+  const { error } = await sb.from('manichini').delete().eq('id', id);
+  if (error) throw error;
+  await sb.storage.from('manichini').remove([`${id}-base.jpg`, `${id}-zone.png`]);
+  const list = (await db.getKV(KEY)) || [];
+  const it = list.find((x) => x.id === id);
+  if (it) { it.published = false; await db.setKV(KEY, list); }
+  const shared = ((await db.getKV(SHARED)) || []).filter((x) => x.id !== id);
+  await db.setKV(SHARED, shared);
+  await refresh();
 }
 
 // ---------- preparazione dell'immagine ----------

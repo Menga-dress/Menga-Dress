@@ -3,7 +3,7 @@ import { getWeather, getForecast } from './weather.js';
 import { detectColors } from './colors.js';
 import { suggestOutfits, ideaName } from './stylist.js';
 import { lookView, garmentView, previewPhoto, forgetPhoto } from './look.js';
-import { prepareMannequin, loadCustom, saveCustom, removeCustom } from './manichini.js';
+import { prepareMannequin, loadCustom, saveCustom, removeCustom, syncShared, isAdmin, publishShared, unpublishShared } from './manichini.js';
 import { analyzeGarment, isModelCached, rememberGarment, forgetGarment, learnFromWardrobe } from './riconosci.js';
 import { removeBackground } from './sfondo.js';
 import * as sync from './sync.js';
@@ -12,7 +12,7 @@ import {
   mannequinMatch, currentGender, CUSTOM, ZONE_CATEGORIES, zoneOfCategory,
 } from './catalog.js';
 
-const APP_VERSION = '39'; // da aumentare a ogni modifica, si vede nelle Impostazioni
+const APP_VERSION = '40'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
 
@@ -273,6 +273,9 @@ function openMannequinEditor({ category, name, onSaved } = {}) {
         selects[z] = sel;
       }
       const gender = chipGroup({ uomo: 'Uomo', donna: 'Donna' }, currentGender());
+      const pubBox = h('input', { type: 'checkbox' });
+      const pubRow = h('label', { class: 'check', hidden: true }, pubBox, ' Pubblica per tutti gli utenti dell\'app');
+      isAdmin().then((v) => { if (v) { pubRow.hidden = false; pubBox.checked = true; } });
       const occasions = chipGroup(OCCASIONS, ['tempo_libero'], { multiple: true });
       const nameIn = h('input', { type: 'text', placeholder: 'es. Maglione e cargo' });
       const autoName = () => {
@@ -342,8 +345,10 @@ function openMannequinEditor({ category, name, onSaved } = {}) {
           toast('Non sono riuscito a salvare il manichino.');
           return;
         }
+        if (pubBox.checked) {
+          try { await publishShared(m); toast(`Manichino "${m.name}" aggiunto e pubblicato per tutti`); } catch (e) { toast('Salvato, ma non pubblicato: ' + sync.friendlyError(e)); }
+        } else toast(`Manichino "${m.name}" aggiunto`);
         close();
-        toast(`Manichino "${m.name}" aggiunto`);
         onSaved?.();
         window.dispatchEvent(new Event('manichini'));
         route();
@@ -355,6 +360,7 @@ function openMannequinEditor({ category, name, onSaved } = {}) {
         field('Nome', nameIn),
         h('div', { class: 'field' }, h('span', {}, 'Per'), gender),
         h('div', { class: 'field' }, h('span', {}, 'Occasioni'), occasions),
+        pubRow,
         h('h2', {}, 'Prova i colori'),
         h('p', { class: 'hint' }, 'Tocca un colore per vedere se luci e ombre vengono bene.'),
         zones.length > 1 ? focusChips : null,
@@ -374,31 +380,56 @@ function openMannequinEditor({ category, name, onSaved } = {}) {
 // Elenco nelle Impostazioni: i manichini creati da te, con anteprima e "Togli".
 function mannequinSection() {
   const box = h('div');
+  let admin = false;
+  const card = (c) => {
+    const cv = h('canvas', { 'aria-label': c.name });
+    const p = {};
+    for (const z of [1, 2, 3, 4]) if (c.garments?.[z]) p[z] = PALETTE[TRY_BASE[z]];
+    previewPhoto(cv, c.base, c.zone, p).catch(() => {});
+    const busy = async (btn, fn, ok) => {
+      btn.disabled = true;
+      try { await fn(); toast(ok); } catch (e) { console.warn('manichini', e); toast('Non riuscito: ' + sync.friendlyError(e)); }
+      paintList();
+    };
+    const actions = [];
+    if (!c.shared) {
+      actions.push(h('button', {
+        type: 'button', class: 'linkbtn',
+        onclick: async () => {
+          if (!confirm(c.published ? `Togliere "${c.name}"? Sparisce anche per tutti gli utenti.` : `Togliere il manichino "${c.name}"?`)) return;
+          if (c.published) { try { await unpublishShared(c.id); } catch (e) { toast('Non riuscito: ' + sync.friendlyError(e)); return; } }
+          await removeCustom(c.id);
+          forgetPhoto(`mio:${c.id}`);
+          paintList();
+          toast('Manichino tolto');
+        },
+      }, 'Togli'));
+      if (admin) {
+        const pub = h('button', { type: 'button', class: 'linkbtn' }, c.published ? 'Togli da tutti' : 'Pubblica per tutti');
+        pub.addEventListener('click', () => (c.published
+          ? busy(pub, () => unpublishShared(c.id), 'Tolto dal catalogo di tutti')
+          : busy(pub, () => publishShared(c), 'Pubblicato: ora lo vedono tutti')));
+        actions.push(pub);
+      }
+    }
+    return h('figure', {}, cv,
+      h('figcaption', {}, c.name, h('small', {}, ` · ${c.gender}${c.shared ? ' · per tutti' : c.published ? ' · pubblicato' : ''}`)),
+      ...actions);
+  };
   const paintList = () => {
-    box.replaceChildren(
-      h('p', { class: 'hint' }, `L'app ha già 11 manichini uomo e 8 donna. Qui aggiungi i tuoi, fatti con ChatGPT o Gemini: restano su questo telefono e sono nel backup.`),
-      h('div', { class: 'mlist' },
-        ...CUSTOM.map((c) => {
-          const cv = h('canvas', { 'aria-label': c.name });
-          const p = {};
-          for (const z of [1, 2, 3, 4]) if (c.garments?.[z]) p[z] = PALETTE[TRY_BASE[z]];
-          previewPhoto(cv, c.base, c.zone, p).catch(() => {});
-          return h('figure', {}, cv,
-            h('figcaption', {}, c.name, h('small', {}, ` · ${c.gender}`)),
-            h('button', {
-              type: 'button', class: 'linkbtn',
-              onclick: async () => {
-                if (!confirm(`Togliere il manichino "${c.name}"?`)) return;
-                await removeCustom(c.id);
-                forgetPhoto(`mio:${c.id}`);
-                paintList();
-                toast('Manichino tolto');
-              },
-            }, 'Togli'));
-        }),
-        h('button', { type: 'button', class: 'madd', onclick: () => openMannequinEditor({ onSaved: paintList }) }, h('span', {}, '+'), 'Aggiungi')));
+    const mine = CUSTOM.filter((c) => !c.shared);
+    const shared = CUSTOM.filter((c) => c.shared);
+    box.replaceChildren(...[
+      h('p', { class: 'hint' }, `L'app ha già 11 manichini uomo e 8 donna. Qui aggiungi i tuoi, fatti con ChatGPT o Gemini: restano su questo telefono, sono nel backup e per i tuoi capi vincono su quelli dell'app.`),
+      admin ? h('p', { class: 'hint' }, 'Sei l\'amministratore: con "Pubblica per tutti" un tuo manichino arriva a tutti gli utenti dell\'app.') : null,
+      h('div', { class: 'mlist' }, ...mine.map(card),
+        h('button', { type: 'button', class: 'madd', onclick: () => openMannequinEditor({ onSaved: paintList }) }, h('span', {}, '+'), 'Aggiungi')),
+      shared.length ? h('h3', {}, 'Manichini per tutti') : null,
+      shared.length ? h('div', { class: 'mlist' }, ...shared.map(card)) : null].filter(Boolean));
   };
   paintList();
+  isAdmin().then((v) => { if (v) { admin = true; paintList(); } });
+  syncShared().then((changed) => { if (changed) paintList(); }).catch(() => {});
   return box;
 }
 
@@ -689,9 +720,10 @@ function editItem(item, { isNew = false } = {}) {
           `"${name}" non è tra i tipi dell'app: scegli un tipo qui sopra per collegarlo a un capo dei ${who}.`);
       } else if (m.same && m.custom) {
         const mine = CUSTOM.find((c) => c.id === m.custom);
-        box = h('div', { class: 'match ok' }, h('strong', {}, `✓ Sul tuo manichino${mine ? ` "${mine.name}"` : ''}`),
-          'Se qualcosa non torna puoi rifarlo: quello nuovo prende il suo posto.',
-          newMannequinButton(category, name, 'Rifai il manichino', capoVero));
+        box = h('div', { class: 'match ok' }, h('strong', {}, `✓ Sul ${mine?.shared ? '' : 'tuo '}manichino${mine ? ` "${mine.name}"` : ''}`),
+          mine?.shared ? 'È uno dei manichini per tutti. Se qualcosa non torna puoi farne uno tuo: prende il suo posto.'
+            : 'Se qualcosa non torna puoi rifarlo: quello nuovo prende il suo posto.',
+          newMannequinButton(category, name, mine?.shared ? 'Crea un manichino tuo' : 'Rifai il manichino', capoVero));
       } else if (m.same) {
         box = h('div', { class: 'match ok' }, h('strong', {}, `✓ Sui manichini: ${m.garment}`),
           `I ${who} hanno lo stesso capo, l'anteprima lo mostra col suo colore. Se sul manichino non viene bene, puoi crearne uno tuo per questo capo.`,
@@ -1794,6 +1826,8 @@ document.getElementById('settings-btn').addEventListener('click', openSettings);
 window.addEventListener('hashchange', route);
 // I manichini creati da te servono già al primo disegno dell'armadio.
 loadCustom().catch(() => {}).then(route);
+// Arrivati manichini pubblici nuovi: si ridisegna la pagina (se non c'è una scheda aperta).
+window.addEventListener('manichini', () => { if (!document.querySelector('dialog[open]')) route(); });
 db.askPersistence();
 initAccount();
 // L'app impara dai capi già salvati (in sottofondo, solo se il modello è già sul telefono).

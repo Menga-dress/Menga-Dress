@@ -230,7 +230,8 @@ function customFor(category, name, gender) {
   if (!z) return null;
   // Il più recente, preferendo quelli creati proprio per questo capo.
   const list = CUSTOM.filter((x) => x.gender === gender && x.garments?.[z] === name)
-    .sort((a, b) => (b.main === name) - (a.main === name) || String(b.createdAt).localeCompare(String(a.createdAt)));
+    .sort((a, b) => (b.main === name) - (a.main === name) || (!b.shared) - (!a.shared)
+      || String(b.createdAt).localeCompare(String(a.createdAt)));
   const c = list[0];
   return c ? { id: c.id, zone: z } : null;
 }
