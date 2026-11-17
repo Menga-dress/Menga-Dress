@@ -12,7 +12,7 @@ import {
   mannequinMatch, currentGender, CUSTOM, ZONE_CATEGORIES, zoneOfCategory,
 } from './catalog.js';
 
-const APP_VERSION = '40'; // da aumentare a ogni modifica, si vede nelle Impostazioni
+const APP_VERSION = '41'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
 
