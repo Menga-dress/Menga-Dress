@@ -1,5 +1,5 @@
 import * as db from './db.js';
-import { getWeather } from './weather.js';
+import { getWeather, getForecast } from './weather.js';
 import { detectColors } from './colors.js';
 import { suggestOutfits, ideaName } from './stylist.js';
 import { lookView, garmentView, previewPhoto, forgetPhoto } from './look.js';
@@ -12,7 +12,7 @@ import {
   mannequinMatch, currentGender, CUSTOM, ZONE_CATEGORIES, zoneOfCategory,
 } from './catalog.js';
 
-const APP_VERSION = '36'; // da aumentare a ogni modifica, si vede nelle Impostazioni
+const APP_VERSION = '37'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
 
@@ -119,9 +119,9 @@ function newMannequinPrompt(category, name) {
   const what = EN[name] || name;
   const zone = ZONE_COLOR[category] || 'ROSSO puro';
   return [
-    `Crea un'immagine verticale 2:3, figura intera, di un manichino ${donna ? 'femminile' : 'maschile'} nero lucido senza volto, in piedi su un piedistallo nero, sfondo nero con un sottile cerchio dorato dietro.`,
+    `Crea un'immagine verticale 2:3, figura intera centrata, di un manichino ${donna ? 'femminile' : 'maschile'} nero lucido senza volto, in piedi su un piedistallo ROTONDO nero lucido con bordo dorato, sfondo nero con un cerchio dorato luminoso dietro (leggero bagliore caldo).`,
     `Il manichino indossa ${articolo(name)} (${what}), in tinta unita ${zone}, senza fantasie né scritte.`,
-    'Gli altri capi in tinta unita a colori pieni: giacca ROSSO puro (se c\'è), maglia VERDE puro, pantaloni BLU puro, scarpe GIALLO puro.',
+    'Gli altri capi in tinta unita a colori pieni e saturi: giacca ROSSO puro (se c\'è), maglia VERDE puro, pantaloni BLU puro, scarpe GIALLO limone puro (non ocra né senape).',
     'Luce morbida da studio, pieghe del tessuto visibili, nessun altro oggetto.',
   ].join(' ');
 }
@@ -132,13 +132,16 @@ function showNewMannequin(category, name) {
     sheetHead(`Nuovo manichino: ${name}`, close),
     h('p', {}, `I manichini ${currentGender()} non hanno ${articolo(name)}. Puoi crearne uno con ChatGPT o Gemini e caricarlo qui: l'app lo prepara da sola.`),
     h('ol', { class: 'steps' },
-      h('li', {}, 'Copia il testo qui sotto e incollalo in ChatGPT.'),
+      h('li', {}, 'Tocca ChatGPT o Gemini: si apre col testo già pronto.'),
       h('li', {}, `Controlla che ${articolo(name)} sia di un solo colore pieno (${ZONE_COLOR[category] || 'ROSSO puro'}), come gli altri capi.`),
       h('li', {}, 'Salva l\'immagine sul telefono e tocca "Carica il manichino".')),
     h('textarea', { class: 'prompt', readonly: true, rows: 7 }, prompt),
+    h('div', { class: 'row' },
+      h('a', { class: 'btn primary', href: `https://chatgpt.com/?q=${encodeURIComponent(prompt)}`, target: '_blank', rel: 'noopener' }, 'Crea con ChatGPT'),
+      h('button', { type: 'button', class: 'btn primary', onclick: () => openGemini(prompt) }, 'Crea con Gemini')),
     h('div', { class: 'row end' },
       h('button', {
-        type: 'button', class: 'btn primary',
+        type: 'button', class: 'btn',
         onclick: async () => {
           try { await navigator.clipboard.writeText(prompt); toast('Testo copiato'); } catch { toast('Tieni premuto sul testo per copiarlo'); }
         },
@@ -342,6 +345,16 @@ function mannequinSection() {
   };
   paintList();
   return box;
+}
+
+// Gemini non accetta il testo nell'indirizzo: sul telefono si condivide il testo con l'app Gemini
+// (menu Condividi di Android); se non si può, si copia e si apre Gemini nel browser.
+async function openGemini(prompt) {
+  if (navigator.share) {
+    try { await navigator.share({ text: prompt }); return; } catch (e) { if (e?.name === 'AbortError') return; }
+  }
+  try { await navigator.clipboard.writeText(prompt); toast('Testo copiato: incollalo in Gemini'); } catch { /* niente */ }
+  window.open('https://gemini.google.com/app', '_blank', 'noopener');
 }
 
 function newMannequinButton(category, name) {
@@ -938,8 +951,25 @@ async function renderOutfit() {
     }
   });
 
+  // Outfit pianificato per oggi dal Diario.
+  const planned = (await db.getAll('outfits')).find((o) => o.planned === todayKey() && !o.worn);
+  let plannedCard = null;
+  if (planned) {
+    const byId = Object.fromEntries(items.map((i) => [i.id, i]));
+    const pieces = (planned.itemIds || []).map((id) => byId[id]).filter(Boolean);
+    const wearBtn = h('button', {
+      type: 'button', class: 'btn primary',
+      onclick: async () => { await wearOutfit(planned, pieces); wearBtn.disabled = true; wearBtn.textContent = 'Indossato oggi ✓'; toast('Buona giornata!'); },
+    }, 'Lo indosso oggi');
+    plannedCard = h('div', { class: 'card outfit' },
+      h('h3', {}, `Per oggi avevi scelto: ${planned.title || 'outfit'}`),
+      pieces.length ? h('figure', { class: 'look' }, lookView(pieces, planned.occasion || 'tempo_libero')) : null,
+      h('div', { class: 'row end' }, h('a', { class: 'btn', href: '#/diario' }, 'Diario'), wearBtn));
+  }
+
   view.append(
     weatherBox,
+    plannedCard,
     fewItems ? h('p', { class: 'hint' }, items.length
       ? 'Hai ancora pochi capi: dove manca qualcosa ti propongo io cosa prendere.'
       : 'L\'armadio è vuoto: intanto ti propongo outfit completi con capi da prendere. Più capi aggiungi, più le proposte useranno i tuoi.') : null,
@@ -1041,6 +1071,310 @@ function shopLink(it) {
   const size = it.category === 'shoes' ? p.shoe : it.category === 'bottom' ? p.bottomSize : p.topSize;
   const q = [ideaName(it), gender, size ? `taglia ${size}` : ''].filter(Boolean).join(' ');
   return `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(q)}`;
+}
+
+// ---------- Diario: calendario degli outfit e statistiche ----------
+
+const pad2 = (n) => String(n).padStart(2, '0');
+const dayKey = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const todayKey = () => dayKey(new Date());
+const fromKey = (k) => { const [y, m, d] = k.split('-').map(Number); return new Date(y, m - 1, d); };
+// Giorno di un outfit: quello pianificato, altrimenti il giorno in cui l'hai indossato.
+const outfitDay = (o) => o.planned || (o.date ? dayKey(new Date(o.date)) : '');
+const WEEKDAYS = ['dom', 'lun', 'mar', 'mer', 'gio', 'ven', 'sab'];
+const MONTHS = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', 'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'];
+const skyIcon = (sky) => ({ sereno: '☀️', 'poco nuvoloso': '🌤️', nuvoloso: '☁️', nebbia: '🌫️', pioviggine: '🌦️', pioggia: '🌧️', neve: '❄️', temporale: '⛈️' }[sky] || '🌡️');
+
+const diaryState = { tab: null, month: null, forecast: null, forecastError: null };
+
+async function renderDiary() {
+  titleEl.textContent = 'Diario';
+  view.replaceChildren();
+  if (!diaryState.tab) {
+    try { diaryState.tab = localStorage.getItem('menga-diario') || 'calendario'; } catch { diaryState.tab = 'calendario'; }
+  }
+  const [items, outfits] = await Promise.all([db.getAll('items'), db.getAll('outfits')]);
+  const body = h('div');
+  const tabs = chipGroup({ calendario: 'Calendario', statistiche: 'Statistiche' }, diaryState.tab, {
+    onChange: (v) => {
+      diaryState.tab = v;
+      try { localStorage.setItem('menga-diario', v); } catch { /* niente */ }
+      paint();
+    },
+  });
+  const paint = () => body.replaceChildren(diaryState.tab === 'statistiche' ? statsView(items, outfits) : calendarView(items, outfits));
+  view.append(tabs, body);
+  paint();
+}
+
+// Piccola fila di colori dei capi di un outfit.
+function outfitDots(o, byId) {
+  return h('span', { class: 'odots' }, (o.itemIds || []).map((id) => byId[id]).filter(Boolean).slice(0, 4).map((it) => {
+    const rgb = PALETTE[it.colors?.[0]] || [150, 150, 150];
+    return h('i', { style: `background:rgb(${rgb.join(',')})` });
+  }));
+}
+
+function calendarView(items, outfits) {
+  const byId = Object.fromEntries(items.map((i) => [i.id, i]));
+  const shown = outfits.filter((o) => o.worn || o.planned);
+  const byDay = {};
+  for (const o of shown) (byDay[outfitDay(o)] ||= []).push(o);
+  const box = h('div');
+
+  // Settimana: meteo e outfit pianificati.
+  const week = h('div', { class: 'week' });
+  const paintWeek = () => {
+    const days = [];
+    for (let i = 0; i < 7; i++) { const d = new Date(); d.setDate(d.getDate() + i); days.push(d); }
+    week.replaceChildren(...days.map((d, i) => {
+      const k = dayKey(d);
+      const fc = diaryState.forecast?.find((f) => f.day === k);
+      const list = byDay[k] || [];
+      const plan = list.find((o) => o.planned && !o.worn);
+      const worn = list.find((o) => o.worn);
+      return h('div', { class: 'wday' + (i === 0 ? ' today' : '') },
+        h('b', {}, i === 0 ? 'Oggi' : i === 1 ? 'Domani' : `${WEEKDAYS[d.getDay()]} ${d.getDate()}`),
+        h('span', { class: 'wsky' }, fc ? `${skyIcon(fc.sky)} ${fc.min}°/${fc.max}°` : diaryState.forecastError ? '' : '…'),
+        fc && fc.rain >= 50 ? h('small', {}, `pioggia ${fc.rain}%`) : null,
+        worn ? h('button', { type: 'button', class: 'wplan done', onclick: () => openDay(k, items, outfits) }, outfitDots(worn, byId), 'Indossato')
+          : plan ? h('button', { type: 'button', class: 'wplan', onclick: () => openDay(k, items, outfits) }, outfitDots(plan, byId), plan.title || 'Pianificato')
+            : h('button', { type: 'button', class: 'wplan empty', onclick: () => planDay(k, fc, items) }, '+ Pianifica'));
+    }));
+  };
+  paintWeek();
+  if (!diaryState.forecast && !diaryState.forecastError) {
+    getForecast(7).then((f) => { diaryState.forecast = f; paintWeek(); })
+      .catch((e) => { diaryState.forecastError = e.message; paintWeek(); });
+  }
+
+  // Mese.
+  const now = new Date();
+  if (!diaryState.month) diaryState.month = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthBox = h('div');
+  const paintMonth = () => {
+    const m = diaryState.month;
+    const first = new Date(m.getFullYear(), m.getMonth(), 1);
+    const lead = (first.getDay() + 6) % 7; // da lunedì
+    const daysIn = new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate();
+    const cells = [];
+    for (let i = 0; i < lead; i++) cells.push(h('span', { class: 'cday blank' }));
+    let wornCount = 0;
+    for (let d = 1; d <= daysIn; d++) {
+      const k = dayKey(new Date(m.getFullYear(), m.getMonth(), d));
+      const list = byDay[k] || [];
+      const o = list.find((x) => x.worn) || list[0];
+      if (list.some((x) => x.worn)) wornCount++;
+      cells.push(h('button', {
+        type: 'button', class: 'cday' + (k === todayKey() ? ' today' : '') + (o ? (o.worn ? ' worn' : ' planned') : ''),
+        onclick: () => (o ? openDay(k, items, outfits) : k >= todayKey() ? planDay(k, diaryState.forecast?.find((f) => f.day === k), items) : null),
+      }, h('span', {}, d), o ? outfitDots(o, byId) : null));
+    }
+    const move = (n) => { diaryState.month = new Date(m.getFullYear(), m.getMonth() + n, 1); paintMonth(); };
+    monthBox.replaceChildren(
+      h('div', { class: 'mhead' },
+        h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Mese prima', onclick: () => move(-1) }, '‹'),
+        h('b', {}, `${MONTHS[m.getMonth()]} ${m.getFullYear()}`),
+        h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Mese dopo', onclick: () => move(1) }, '›')),
+      h('div', { class: 'cal' }, ['lun', 'mar', 'mer', 'gio', 'ven', 'sab', 'dom'].map((w) => h('span', { class: 'cwd' }, w)), cells),
+      h('p', { class: 'hint' }, wornCount ? `${wornCount} ${wornCount === 1 ? 'giorno' : 'giorni'} con un outfit indossato in questo mese.` : 'In questo mese non hai ancora segnato outfit. Quando tocchi "Lo indosso oggi" finiscono qui.'));
+  };
+  paintMonth();
+
+  box.append(
+    h('h2', {}, 'La tua settimana'),
+    h('p', { class: 'hint' }, diaryState.forecastError ? `Meteo non disponibile (${diaryState.forecastError}): puoi pianificare lo stesso.` : 'Pianifica gli outfit col meteo dei prossimi giorni.'),
+    week,
+    h('h2', {}, 'Calendario'),
+    monthBox);
+  return box;
+}
+
+// Giorno del calendario: gli outfit indossati o pianificati, con anteprima.
+function openDay(k, items, outfits) {
+  const byId = Object.fromEntries(items.map((i) => [i.id, i]));
+  const list = outfits.filter((o) => (o.worn || o.planned) && outfitDay(o) === k);
+  const d = fromKey(k);
+  openDialog((close) => h('div', { class: 'sheet' },
+    sheetHead(`${WEEKDAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`, close),
+    ...list.map((o) => {
+      const pieces = (o.itemIds || []).map((id) => byId[id]).filter(Boolean);
+      const isToday = k === todayKey();
+      return h('div', { class: 'card outfit' },
+        h('h3', {}, o.title || 'Outfit'),
+        h('p', { class: 'hint' }, o.worn ? 'Indossato' : 'Pianificato', o.weather ? ` · ${o.weather}` : ''),
+        pieces.length ? h('figure', { class: 'look' }, lookView(pieces, o.occasion || 'tempo_libero')) : null,
+        h('div', { class: 'pieces' }, pieces.map((it) => h('figure', {}, h('img', { src: imgURL(it), alt: describeItem(it), class: it.cutout ? 'cut' : null }), h('figcaption', {}, it.subcategory || CATEGORIES[it.category])))),
+        h('div', { class: 'row end' },
+          h('button', {
+            type: 'button', class: 'btn danger',
+            onclick: async () => {
+              if (!confirm(o.worn ? 'Togliere questo outfit dal calendario?' : 'Togliere questo outfit pianificato?')) return;
+              if (o.worn) {
+                for (const it of pieces) { it.timesWorn = Math.max(0, (it.timesWorn || 0) - 1); await db.put('items', it); }
+              }
+              await db.remove('outfits', o.id);
+              close();
+              toast('Tolto dal calendario');
+              route();
+            },
+          }, 'Togli'),
+          !o.worn && isToday ? h('button', {
+            type: 'button', class: 'btn primary',
+            onclick: async () => { await wearOutfit(o, pieces); close(); toast('Buona giornata!'); route(); },
+          }, 'Lo indosso oggi') : null));
+    })));
+}
+
+// Segna un outfit come indossato oggi: conta per i capi e finisce nel calendario.
+async function wearOutfit(record, pieces) {
+  const now = new Date().toISOString();
+  for (const it of pieces) {
+    if (it.idea) continue;
+    it.timesWorn = (it.timesWorn || 0) + 1;
+    it.lastWorn = now;
+    await db.put('items', it);
+  }
+  record.worn = true;
+  record.date = now;
+  if (!record.rating) record.rating = 'up';
+  await db.put('outfits', record);
+}
+
+// Pianifica un giorno: scegli occasione e umore, l'app propone 3 outfit col meteo di quel giorno.
+function planDay(k, fc, items) {
+  const d = fromKey(k);
+  let occasion = outfitState.occasion;
+  let mood = outfitState.mood;
+  openDialog((close) => {
+    const results = h('div');
+    const go = async () => {
+      const [profile, history] = await Promise.all([db.getKV('profile'), db.getAll('outfits')]);
+      const list = suggestOutfits({ items, profile, history, mood, occasion, weather: fc || null });
+      results.replaceChildren(...list.map((o) => {
+        const pieces = o.pieces;
+        const usable = o.ideas.length < o.pieces.length;
+        return h('div', { class: 'card outfit' },
+          h('h3', {}, o.title),
+          h('p', {}, o.reason),
+          h('figure', { class: 'look' }, lookView(pieces, occasion)),
+          o.ideas.length ? h('p', { class: 'hint' }, `Ti manca: ${o.ideas.map(ideaName).join(', ')}`) : null,
+          usable ? h('div', { class: 'row end' }, h('button', {
+            type: 'button', class: 'btn primary',
+            onclick: async () => {
+              await db.put('outfits', {
+                id: db.newId(), date: new Date().toISOString(), planned: k,
+                title: o.title, reason: o.reason, itemIds: o.item_ids.filter((id) => items.some((it) => it.id === id)),
+                mood, occasion, weather: fc?.summary || null, rating: null, worn: false,
+              });
+              close();
+              toast('Outfit pianificato');
+              route();
+            },
+          }, 'Scelgo questo')) : null);
+      }));
+    };
+    return h('div', { class: 'sheet' },
+      sheetHead(`Pianifica ${WEEKDAYS[d.getDay()]} ${d.getDate()}`, close),
+      fc ? h('p', { class: 'hint' }, `${skyIcon(fc.sky)} ${fc.sky}, ${fc.min}°/${fc.max}°, pioggia ${fc.rain}%`) : null,
+      h('h2', {}, 'Per cosa ti vesti?'),
+      chipGroup(OCCASIONS, occasion, { onChange: (v) => { occasion = v; } }),
+      h('h2', {}, 'Come vorresti sentirti?'),
+      chipGroup(MOODS, mood, { onChange: (v) => { mood = v; } }),
+      h('button', { type: 'button', class: 'btn primary block', onclick: go }, 'Proponimi 3 outfit'),
+      h('div', { class: 'spacer' }),
+      results);
+  });
+}
+
+// ---------- statistiche ----------
+
+const DAY_MS = 86400000;
+const daysAgo = (iso) => (iso ? Math.floor((Date.now() - new Date(iso).getTime()) / DAY_MS) : Infinity);
+
+// Cosa manca all'armadio per vestirsi bene in ogni occasione e stagione.
+function wardrobeGaps(items, profile) {
+  const has = (cat, names) => items.some((it) => it.category === cat && (!names || names.includes(it.subcategory)));
+  const donna = (profile?.gender || currentGender()) === 'donna';
+  const gaps = [];
+  const add = (cond, text, idea) => { if (cond) gaps.push({ text, idea }); };
+  add(!has('top'), 'Nessuna maglia o camicia.', { category: 'top', subcategory: 'T-shirt', colors: ['bianco'] });
+  add(!has('bottom') && !has('dress'), 'Nessun pantalone.', { category: 'bottom', subcategory: 'Jeans', colors: ['denim'] });
+  add(!has('shoes'), 'Nessuna scarpa.', { category: 'shoes', subcategory: 'Sneakers', colors: ['bianco'] });
+  add(has('shoes') && !has('shoes', donna ? ['Scarpe eleganti', 'Mocassini', 'Décolleté'] : ['Scarpe eleganti', 'Mocassini']),
+    'Nessuna scarpa elegante per lavoro ed eventi.', { category: 'shoes', subcategory: donna ? 'Décolleté' : 'Scarpe eleganti', colors: ['nero'] });
+  add(!has('top', ['Camicia', 'Camicia elegante', 'Camicetta']), 'Nessuna camicia per il lavoro.', { category: 'top', subcategory: 'Camicia', colors: ['azzurro'] });
+  add(!has('bottom', ['Pantaloni eleganti', 'Chino', 'Gonna']) && !has('dress'), 'Nessun pantalone elegante.', { category: 'bottom', subcategory: 'Chino', colors: ['blu navy'] });
+  add(!has('outerwear', ['Cappotto', 'Piumino']), 'Nessun capo caldo per l\'inverno.', { category: 'outerwear', subcategory: 'Cappotto', colors: ['blu navy'] });
+  add(!has('outerwear', ['Impermeabile', 'Trench']), 'Niente per la pioggia.', { category: 'outerwear', subcategory: 'Impermeabile', colors: ['nero'] });
+  add(!has('shoes', ['Scarpe da corsa']) && !has('bottom', ['Pantaloni sportivi', 'Leggings']), 'Niente per lo sport.', { category: 'shoes', subcategory: 'Scarpe da corsa', colors: ['nero'] });
+  add(!items.some((it) => ['top'].includes(it.category) && ['bianco', 'nero', 'grigio', 'grigio chiaro'].includes(it.colors?.[0])),
+    'Nessuna maglia neutra (bianca, nera o grigia), la più facile da abbinare.', { category: 'top', subcategory: 'T-shirt', colors: ['bianco'] });
+  return gaps;
+}
+
+function gapLink(idea, profile) {
+  const p = profile || {};
+  const size = idea.category === 'shoes' ? p.shoe : idea.category === 'bottom' ? p.bottomSize : p.topSize;
+  const gender = { uomo: 'uomo', donna: 'donna' }[p.gender] || '';
+  const q = [`${idea.subcategory} ${idea.colors[0]}`, gender, size ? `taglia ${size}` : ''].filter(Boolean).join(' ');
+  return `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(q)}`;
+}
+
+function statsView(items, outfits) {
+  const box = h('div');
+  if (!items.length) {
+    box.append(h('p', { class: 'hint' }, 'Aggiungi qualche capo all\'armadio per vedere le statistiche.'));
+    return box;
+  }
+  const worn = items.filter((i) => i.timesWorn);
+  const never = items.filter((i) => !i.timesWorn);
+  const top = [...worn].sort((a, b) => (b.timesWorn || 0) - (a.timesWorn || 0)).slice(0, 5);
+  const forgotten = worn.filter((i) => daysAgo(i.lastWorn) >= 60).sort((a, b) => daysAgo(b.lastWorn) - daysAgo(a.lastWorn));
+  const monthStart = new Date(); monthStart.setDate(1);
+  const wornMonth = outfits.filter((o) => o.worn && o.date && new Date(o.date) >= new Date(monthStart.getFullYear(), monthStart.getMonth(), 1)).length;
+  const strip = (list, label) => h('div', { class: 'strip' }, list.map((it) => h('button', { type: 'button', class: 'stile', onclick: () => editItem(it) },
+    h('img', { src: imgURL(it), alt: describeItem(it), class: it.cutout ? 'cut' : null }), h('small', {}, label(it)))));
+
+  // Capi per categoria.
+  const cats = Object.keys(CATEGORIES).map((c) => [c, items.filter((i) => i.category === c).length]).filter(([, n]) => n);
+  const maxCat = Math.max(...cats.map(([, n]) => n));
+  // Colori principali.
+  const colorCount = {};
+  for (const it of items) { const c = it.colors?.[0]; if (c) colorCount[c] = (colorCount[c] || 0) + 1; }
+  const colors = Object.entries(colorCount).sort((a, b) => b[1] - a[1]).slice(0, 8);
+
+  const gapsBox = h('div', { class: 'gaps' });
+  db.getKV('profile').then((profile) => {
+    const gaps = wardrobeGaps(items, profile);
+    gapsBox.replaceChildren(gaps.length
+      ? h('ul', {}, gaps.map((g) => h('li', {}, g.text, ' ', h('a', { href: gapLink(g.idea, profile), target: '_blank', rel: 'noopener' }, `Cerca ${g.idea.subcategory.toLowerCase()} ${g.idea.colors[0]}`))))
+      : h('p', { class: 'hint' }, 'Hai tutto il necessario per ogni occasione. 👌'));
+  });
+
+  box.append(
+    h('div', { class: 'kpis' },
+      h('div', {}, h('b', {}, items.length), h('span', {}, 'capi')),
+      h('div', {}, h('b', {}, `${Math.round((worn.length / items.length) * 100)}%`), h('span', {}, 'indossati almeno una volta')),
+      h('div', {}, h('b', {}, wornMonth), h('span', {}, 'outfit questo mese'))),
+    h('h2', {}, 'Cosa ti manca'),
+    gapsBox,
+    never.length ? h('h2', {}, `Mai indossati (${never.length})`) : null,
+    never.length ? strip(never, (it) => it.subcategory || CATEGORIES[it.category]) : null,
+    top.length ? h('h2', {}, 'I più usati') : null,
+    top.length ? strip(top, (it) => `${it.timesWorn} ${it.timesWorn === 1 ? 'volta' : 'volte'}`) : null,
+    forgotten.length ? h('h2', {}, 'Dimenticati da più di 2 mesi') : null,
+    forgotten.length ? strip(forgotten, (it) => `${daysAgo(it.lastWorn)} giorni fa`) : null,
+    h('h2', {}, 'Per categoria'),
+    h('div', { class: 'bars' }, cats.map(([c, n]) => h('div', { class: 'bar' },
+      h('span', {}, CATEGORIES[c]), h('i', { style: `width:${Math.max(6, (n / maxCat) * 100)}%` }), h('b', {}, n)))),
+    h('h2', {}, 'I tuoi colori'),
+    h('div', { class: 'chips' }, colors.map(([c, n]) => {
+      const rgb = PALETTE[c] || [150, 150, 150];
+      return h('span', { class: 'chip' }, h('span', { class: 'swatch', style: `background: rgb(${rgb.join(',')})` }), `${c} ${n}`);
+    })),
+  );
+  return box;
 }
 
 // ---------- Profilo ----------
@@ -1373,7 +1707,7 @@ document.addEventListener('visibilitychange', async () => {
 
 // ---------- navigazione ----------
 
-const routes = { armadio: renderWardrobe, outfit: renderOutfit, profilo: renderProfile };
+const routes = { armadio: renderWardrobe, outfit: renderOutfit, diario: renderDiary, profilo: renderProfile };
 
 function route() {
   const name = (location.hash.replace(/^#\/?/, '') || 'armadio').split('/')[0];

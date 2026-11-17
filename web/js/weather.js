@@ -47,3 +47,22 @@ export async function getWeather() {
     summary: `${sky}, ora ${now}°C, minima ${min}°C, massima ${max}°C, probabilità di pioggia ${rain}%`,
   };
 }
+
+// Previsioni dei prossimi giorni: [{ day: 'AAAA-MM-GG', min, max, rain, sky, summary }].
+export async function getForecast(days = 7) {
+  const { latitude, longitude } = await position();
+  const url = 'https://api.open-meteo.com/v1/forecast'
+    + `?latitude=${latitude.toFixed(3)}&longitude=${longitude.toFixed(3)}`
+    + '&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code'
+    + `&timezone=auto&forecast_days=${days}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('Meteo non disponibile');
+  const d = (await res.json()).daily;
+  return d.time.map((day, i) => {
+    const min = Math.round(d.temperature_2m_min[i]);
+    const max = Math.round(d.temperature_2m_max[i]);
+    const rain = d.precipitation_probability_max?.[i] ?? 0;
+    const sky = describe(d.weather_code[i]);
+    return { day, min, max, rain, sky, now: Math.round((min + max) / 2), summary: `${sky}, minima ${min}°C, massima ${max}°C, probabilità di pioggia ${rain}%` };
+  });
+}
