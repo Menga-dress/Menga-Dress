@@ -320,3 +320,8 @@ img.cut { object-fit: contain !important; background: var(--surface); padding: 4
 .gaps ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
 .gaps a { color: var(--accent); }
 a.btn { text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
+
+.refphoto { display: flex; gap: 12px; align-items: center; margin: 8px 0; }
+.refphoto img { width: 84px; height: 110px; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); flex: none; background: var(--surface); }
+.refphoto .hint { margin: 0; }
+.refphoto a { color: var(--accent); }
