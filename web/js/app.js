@@ -12,7 +12,7 @@ import {
   mannequinMatch, currentGender, CUSTOM, ZONE_CATEGORIES, zoneOfCategory,
 } from './catalog.js';
 
-const APP_VERSION = '38'; // da aumentare a ogni modifica, si vede nelle Impostazioni
+const APP_VERSION = '39'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
 
@@ -114,33 +114,85 @@ const EN = {
   Cintura: 'a belt', Borsa: 'a handbag', Sciarpa: 'a scarf', Cappello: 'a hat', Cravatta: 'a necktie',
 };
 
-function newMannequinPrompt(category, name) {
+// Dettagli da copiare dalla foto e parti che restano nel loro colore vero, per tipo di capo.
+const DETAILS = {
+  shoes: 'forma della punta, suola, intersuola, lacci, linguetta, cuciture e inserti',
+  top: 'scollo, colletto, maniche, polsini, bottoni, tasche e cuciture',
+  bottom: 'vestibilità, tasche, cuciture, bottoni, passanti e orlo',
+  outerwear: 'colletto, cappuccio, zip, bottoni, tasche, polsini e lunghezza',
+  dress: 'scollo, maniche, cuciture, lunghezza e vestibilità',
+  accessory: 'forma, cuciture e dettagli',
+};
+const MAIN_PART = { shoes: 'la tomaia (la parte in tessuto o pelle sopra la suola)' };
+const SECONDARY = {
+  shoes: 'suola, intersuola, lacci e inserti', top: 'bottoni e dettagli a contrasto', bottom: 'bottoni e rivetti',
+  outerwear: 'zip, bottoni e coulisse', dress: 'bottoni e dettagli', accessory: 'fibbie e metalli',
+};
+
+const OTHERS = [
+  [['outerwear', 'dress'], 'giacca ROSSO puro (se c\'è)'], [['top'], 'maglia VERDE puro'],
+  [['bottom'], 'pantaloni BLU puro'], [['shoes'], 'scarpe GIALLO limone puro (non ocra né senape)'],
+];
+
+// ref: il capo vero (foto, colori, materiale): il testo chiede di riprodurlo fedelmente.
+function newMannequinPrompt(category, name, ref) {
   const donna = currentGender() === 'donna';
   const what = EN[name] || name;
   const zone = ZONE_COLOR[category] || 'ROSSO puro';
-  return [
+  const second = ref?.colors?.[1];
+  const paren = what.toLowerCase() === name.toLowerCase() ? '' : ` (${what})`;
+  const lines = [
     `Crea un'immagine verticale 2:3, figura intera centrata, di un manichino ${donna ? 'femminile' : 'maschile'} nero lucido senza volto, in piedi su un piedistallo ROTONDO nero lucido con bordo dorato, sfondo nero con un cerchio dorato luminoso dietro (leggero bagliore caldo).`,
-    `Il manichino indossa ${articolo(name)} (${what}), in tinta unita ${zone}, senza fantasie né scritte.`,
-    'Gli altri capi in tinta unita a colori pieni e saturi: giacca ROSSO puro (se c\'è), maglia VERDE puro, pantaloni BLU puro, scarpe GIALLO limone puro (non ocra né senape).',
+  ];
+  if (ref?.image) {
+    lines.push(
+      `Il manichino indossa ${articolo(name)}${paren}: riproduci fedelmente il capo della foto allegata (forma, modello, proporzioni, ${DETAILS[category] || DETAILS.accessory}), senza scritte né loghi leggibili.`,
+      `Colora ${MAIN_PART[category] || 'il tessuto principale'} in tinta unita ${zone}, così l'app può ricolorarlo; ${SECONDARY[category] || 'i dettagli'} restano del loro colore vero${second ? ` (${second})` : ''}.`,
+    );
+    if (ref.material) lines.push(`Materiale: ${ref.material}, con la sua trama visibile.`);
+  } else {
+    lines.push(`Il manichino indossa ${articolo(name)}${paren}, in tinta unita ${zone}, senza fantasie né scritte.`);
+  }
+  lines.push(
+    `Gli altri capi in tinta unita a colori pieni e saturi: ${OTHERS.filter(([cats]) => !cats.includes(category)).map(([, t]) => t).join(', ')}.`,
     'Luce morbida da studio, pieghe del tessuto visibili, nessun altro oggetto.',
-  ].join(' ');
+  );
+  return lines.join(' ');
 }
 
-function showNewMannequin(category, name) {
-  const prompt = newMannequinPrompt(category, name);
+// Manda testo e foto del capo all'app scelta (menu Condividi di Android: ChatGPT, Gemini…).
+async function shareToAI(prompt, file, fallback) {
+  if (file && navigator.canShare?.({ files: [file] })) {
+    try { await navigator.share({ text: prompt, files: [file] }); return; } catch (e) { if (e?.name === 'AbortError') return; }
+  }
+  fallback();
+}
+
+function showNewMannequin(category, name, ref) {
+  const prompt = newMannequinPrompt(category, name, ref);
+  const ext = ref?.image?.type?.split('/')[1] || 'jpg';
+  const file = ref?.image ? new File([ref.image], `capo.${ext}`, { type: ref.image.type || 'image/jpeg' }) : null;
+  const photoURL = file ? URL.createObjectURL(file) : null;
   openDialog((close) => h('div', { class: 'sheet' },
     sheetHead(`Nuovo manichino: ${name}`, close),
     h('p', {}, mannequinMatch(category, name)?.same
       ? `Crea con ChatGPT o Gemini un manichino con ${articolo(name)} e caricalo qui: l'app lo prepara da sola e per questo capo userà il tuo al posto di quello dell'app.`
       : `I manichini ${currentGender()} non hanno ${articolo(name)}. Puoi crearne uno con ChatGPT o Gemini e caricarlo qui: l'app lo prepara da sola.`),
+    file ? h('div', { class: 'refphoto' },
+      h('img', { src: photoURL, alt: 'Foto del tuo capo', class: ref.cutout ? 'cut' : null }),
+      h('p', { class: 'hint' }, 'Insieme al testo parte la foto del tuo capo, così lo riproduce fedelmente: forma, suola, lacci, cuciture.',
+        ' ', h('a', { href: photoURL, download: `capo.${ext}` }, 'Salva la foto'))) : null,
     h('ol', { class: 'steps' },
-      h('li', {}, 'Tocca ChatGPT o Gemini: si apre col testo già pronto.'),
-      h('li', {}, `Controlla che ${articolo(name)} sia di un solo colore pieno (${ZONE_COLOR[category] || 'ROSSO puro'}), come gli altri capi.`),
+      h('li', {}, file ? 'Tocca ChatGPT o Gemini e scegli l\'app dal menu: partono il testo e la foto.' : 'Tocca ChatGPT o Gemini: si apre col testo già pronto.'),
+      h('li', {}, `Controlla che la parte principale sia ${ZONE_COLOR[category] || 'ROSSO puro'} pieno e gli altri capi nei loro colori pieni.`),
       h('li', {}, 'Salva l\'immagine sul telefono e tocca "Carica il manichino".')),
     h('textarea', { class: 'prompt', readonly: true, rows: 7 }, prompt),
     h('div', { class: 'row' },
-      h('a', { class: 'btn primary', href: `https://chatgpt.com/?q=${encodeURIComponent(prompt)}`, target: '_blank', rel: 'noopener' }, 'Crea con ChatGPT'),
-      h('button', { type: 'button', class: 'btn primary', onclick: () => openGemini(prompt) }, 'Crea con Gemini')),
+      h('button', {
+        type: 'button', class: 'btn primary',
+        onclick: () => shareToAI(prompt, file, () => window.open(`https://chatgpt.com/?q=${encodeURIComponent(prompt)}`, '_blank', 'noopener')),
+      }, 'Crea con ChatGPT'),
+      h('button', { type: 'button', class: 'btn primary', onclick: () => shareToAI(prompt, file, () => openGemini(prompt)) }, 'Crea con Gemini')),
     h('div', { class: 'row end' },
       h('button', {
         type: 'button', class: 'btn',
@@ -360,8 +412,9 @@ async function openGemini(prompt) {
   window.open('https://gemini.google.com/app', '_blank', 'noopener');
 }
 
-function newMannequinButton(category, name, label = 'Come creare il manichino') {
-  return h('div', {}, h('button', { type: 'button', class: 'btn small', onclick: () => showNewMannequin(category, name) }, label));
+// ref: funzione che restituisce il capo vero (foto, colori, materiale) al momento del tocco.
+function newMannequinButton(category, name, label = 'Come creare il manichino', ref) {
+  return h('div', {}, h('button', { type: 'button', class: 'btn small', onclick: () => showNewMannequin(category, name, ref?.()) }, label));
 }
 
 // Distanza tra due colori come la vede l'occhio (Lab).
@@ -489,7 +542,7 @@ async function renderWardrobe() {
           sheetHead('Manichini da creare', close),
           h('p', { class: 'hint' }, `Questi tipi non ci sono sui manichini ${currentGender()}. Tocca un tipo per avere il testo per crearlo.`),
           h('div', { class: 'chips' }, kinds.map((it) => h('button', {
-            type: 'button', class: 'chip', onclick: () => showNewMannequin(it.category, it.subcategory),
+            type: 'button', class: 'chip', onclick: () => showNewMannequin(it.category, it.subcategory, it),
           }, `${it.subcategory} · ${missing.filter((x) => x.subcategory === it.subcategory).length}`))))),
       }, `⚠ ${kinds.length} da creare`) : null,
       switcher));
@@ -620,6 +673,11 @@ function editItem(item, { isNew = false } = {}) {
     const guessSlot = h('div');
 
     // Capo corrispondente sui manichini, aggiornato a ogni cambio di categoria o tipo.
+    // Il capo com'è adesso nella scheda: per il testo del manichino fedele.
+    const capoVero = () => ({
+      image: item.image, cutout: item.cutout, material: f.material.value.trim(), pattern: f.pattern.value,
+      colors: f.colors.value.split(',').map((x) => x.trim()).filter(Boolean),
+    });
     const paintMatch = () => {
       const name = f.subcategory.value.trim();
       if (!category || !name) { matchSlot.replaceChildren(); paintMannequin(); return; }
@@ -633,15 +691,15 @@ function editItem(item, { isNew = false } = {}) {
         const mine = CUSTOM.find((c) => c.id === m.custom);
         box = h('div', { class: 'match ok' }, h('strong', {}, `✓ Sul tuo manichino${mine ? ` "${mine.name}"` : ''}`),
           'Se qualcosa non torna puoi rifarlo: quello nuovo prende il suo posto.',
-          newMannequinButton(category, name, 'Rifai il manichino'));
+          newMannequinButton(category, name, 'Rifai il manichino', capoVero));
       } else if (m.same) {
         box = h('div', { class: 'match ok' }, h('strong', {}, `✓ Sui manichini: ${m.garment}`),
           `I ${who} hanno lo stesso capo, l'anteprima lo mostra col suo colore. Se sul manichino non viene bene, puoi crearne uno tuo per questo capo.`,
-          newMannequinButton(category, name, 'Crea un manichino per questo capo'));
+          newMannequinButton(category, name, 'Crea un manichino per questo capo', capoVero));
       } else {
         box = h('div', { class: 'match warn' }, h('strong', {}, `⚠ Serve un nuovo manichino: i ${who} non hanno ${articolo(name)}`),
           m.garment ? `Per ora nell'anteprima appare come il capo più simile: ${m.garment}.` : 'Per ora nell\'anteprima non compare.',
-          newMannequinButton(category, name));
+          newMannequinButton(category, name, undefined, capoVero));
       }
       // Fantasie che il manichino non sa ridisegnare.
       const pat = f.pattern.value;
