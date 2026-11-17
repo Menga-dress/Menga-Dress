@@ -2,7 +2,7 @@
 // proposti. Ogni capo ha la sua forma (camicia, felpa, blazer, jeans, sneakers...) e il colore del
 // capo vero, con sopra luci, ombre e pieghe che danno volume (effetto 3D) qualunque sia il colore.
 // Se manca un capo si usa quello tipico dell'occasione.
-import { PALETTE, mannequinMatch, currentGender } from './catalog.js';
+import { PALETTE, mannequinMatch, currentGender, CUSTOM, MANNEQUIN, zoneOfCategory } from './catalog.js';
 
 const VW = 400;
 const VH = 600;
@@ -558,6 +558,8 @@ const PH = 960;
 // Ogni occasione ha i suoi manichini (come nel pacchetto di Luciano); i capi proposti scelgono
 // solo la variante dentro l'occasione.
 function choosePhoto(pieces, occasion) {
+  const mine = chooseCustom(pieces, occasion);
+  if (mine) return mine;
   const sub = (cat) => String(pieces.find((p) => p.category === cat)?.subcategory || '').toLowerCase();
   const outer = sub('outerwear');
   const top = sub('top');
@@ -612,6 +614,43 @@ function choosePhoto(pieces, occasion) {
   }
 }
 
+// Manichino creato da te: si usa se è per questa occasione e mostra un capo della proposta
+// che i manichini dell'app non hanno (o tutti i capi della proposta).
+function chooseCustom(pieces, occasion) {
+  const gender = isDonna() ? 'donna' : 'uomo';
+  let best = null;
+  for (const c of CUSTOM) {
+    if (c.gender !== gender || !(c.occasions || []).includes(occasion)) continue;
+    let score = 0; let special = false; let zones = 0;
+    for (const z of [1, 2, 3, 4]) if (c.garments?.[z]) zones++;
+    for (const p of pieces) {
+      const z = zoneOfCategory(p.category);
+      if (!z || !p.subcategory || c.garments?.[z] !== p.subcategory) continue;
+      score++;
+      if (!(MANNEQUIN[gender].have[p.category] || []).includes(p.subcategory)) special = true;
+    }
+    if ((special || (score && score >= zones)) && (!best || score > best.score)) best = { score, id: c.id };
+  }
+  return best ? `mio:${best.id}` : null;
+}
+
+// Colori per un manichino creato da te: ogni zona prende il capo della proposta di quella zona.
+function customColors(pieces, occasion) {
+  const def = DEFAULTS[occasion] || DEFAULTS.tempo_libero;
+  const piece = (cat) => pieces.find((p) => p.category === cat);
+  const detail = (p, fallback) => {
+    const c = colorOf(p?.colors?.[0]) || colorOf(fallback);
+    return p && c ? { c, c2: colorOf(p.colors?.[1]), pattern: p.pattern } : c;
+  };
+  const top = piece('top');
+  return {
+    1: detail(piece('outerwear') || piece('dress') || top, def.top[1]),
+    2: detail(top, def.top[1]),
+    3: detail(piece('bottom'), def.bottom[1]),
+    4: detail(piece('shoes'), def.shoes[1]),
+  };
+}
+
 // Tema chiaro (Impostazioni): manichino donna.
 function isDonna() {
   return document.documentElement.dataset.theme === 'donna';
@@ -636,7 +675,13 @@ function loadPhoto(name) {
       ctx.drawImage(img, 0, 0, PW, PH);
       return ctx.getImageData(0, 0, PW, PH).data;
     };
-    photos[name] = Promise.all([load(`img/manichino/${name}.jpg`), load(`img/manichino/${name}-zone.png`)])
+    let urls = [`img/manichino/${name}.jpg`, `img/manichino/${name}-zone.png`];
+    if (name.startsWith('mio:')) {
+      const c = CUSTOM.find((x) => `mio:${x.id}` === name);
+      if (!c) return Promise.reject(new Error('manichino non trovato'));
+      urls = [URL.createObjectURL(c.base), URL.createObjectURL(c.zone)];
+    }
+    photos[name] = Promise.all(urls.map(load))
       .then(([base, zone]) => ({ base: pixels(base), zone: pixels(zone) }))
       .catch((e) => { delete photos[name]; throw e; });
   }
@@ -645,6 +690,7 @@ function loadPhoto(name) {
 
 // Colore per zona: 1 giacca, 2 maglia, 3 pantaloni, 4 scarpe.
 function photoColors(pieces, occasion, base) {
+  if (base.startsWith('mio:')) return customColors(pieces, occasion);
   const def = DEFAULTS[occasion] || DEFAULTS.tempo_libero;
   const get = (cat) => colorOf(pieces.find((p) => p.category === cat)?.colors?.[0]);
   const dress = get('dress');
@@ -817,7 +863,7 @@ const SINGLE = {
 export function garmentView(category, name, colors, pattern) {
   const m = mannequinMatch(category, name);
   if (!m?.garment) return null;
-  const spec = SINGLE[currentGender()][m.garment];
+  const spec = m.custom ? [`mio:${m.custom}`, [m.zone]] : SINGLE[currentGender()][m.garment];
   if (!spec) return null;
   const [base, zones] = spec;
   // I capi molto scuri un po' più chiari, se no sul manichino nero non si distinguono.
@@ -836,3 +882,21 @@ export function garmentView(category, name, colors, pattern) {
   loadPhoto(base).then((px) => paintPhoto(canvas, px, paint)).catch(() => box.remove());
   return { view: box, garment: m.garment, same: m.same };
 }
+
+// Anteprima di un manichino non ancora salvato (schermata "Nuovo manichino").
+export async function previewPhoto(canvas, baseBlob, zoneBlob, paint) {
+  const load = (b) => createImageBitmap(b, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
+  const [bi, zi] = await Promise.all([load(baseBlob), load(zoneBlob)]);
+  const px = (img) => {
+    const c = document.createElement('canvas');
+    c.width = PW; c.height = PH;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(img, 0, 0, PW, PH);
+    return ctx.getImageData(0, 0, PW, PH).data;
+  };
+  canvas.width = PW; canvas.height = PH;
+  paintPhoto(canvas, { base: px(bi), zone: px(zi) }, paint);
+}
+
+// Dimentica le immagini in memoria di un manichino (dopo averlo tolto).
+export function forgetPhoto(name) { delete photos[name]; }

@@ -210,5 +210,23 @@ export function mannequinMatch(category, name, gender = currentGender()) {
   if (!tp) return null;
   const m = MANNEQUIN[gender];
   if ((m.have[category] || []).includes(tp.name)) return { same: true, garment: tp.name };
+  const mine = customFor(category, tp.name, gender);
+  if (mine) return { same: true, garment: tp.name, custom: mine.id, zone: mine.zone };
   return { same: false, garment: m.near[tp.name] || null };
+}
+
+// ---------- manichini creati da te (web/js/manichini.js) ----------
+// { id, name, gender, occasions: [], garments: { 1: tipo|null, 2, 3, 4 }, base: Blob, zone: Blob }
+export const CUSTOM = [];
+export function setCustomMannequins(list) { CUSTOM.splice(0, CUSTOM.length, ...(list || [])); }
+
+// Zone dei manichini: 1 giacca (o abito), 2 maglia, 3 pantaloni, 4 scarpe.
+export const ZONE_CATEGORIES = { 1: ['outerwear', 'dress'], 2: ['top'], 3: ['bottom'], 4: ['shoes'] };
+export const zoneOfCategory = (cat) => Number(Object.keys(ZONE_CATEGORIES).find((z) => ZONE_CATEGORIES[z].includes(cat))) || 0;
+
+function customFor(category, name, gender) {
+  const z = zoneOfCategory(category);
+  if (!z) return null;
+  const c = CUSTOM.find((x) => x.gender === gender && x.garments?.[z] === name);
+  return c ? { id: c.id, zone: z } : null;
 }
