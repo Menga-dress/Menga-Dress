@@ -209,9 +209,10 @@ export function mannequinMatch(category, name, gender = currentGender()) {
   const tp = findSubtype(category, name);
   if (!tp) return null;
   const m = MANNEQUIN[gender];
-  if ((m.have[category] || []).includes(tp.name)) return { same: true, garment: tp.name };
+  // Un manichino creato da te per questo capo vince su quello dell'app.
   const mine = customFor(category, tp.name, gender);
   if (mine) return { same: true, garment: tp.name, custom: mine.id, zone: mine.zone };
+  if ((m.have[category] || []).includes(tp.name)) return { same: true, garment: tp.name };
   return { same: false, garment: m.near[tp.name] || null };
 }
 
@@ -227,6 +228,9 @@ export const zoneOfCategory = (cat) => Number(Object.keys(ZONE_CATEGORIES).find(
 function customFor(category, name, gender) {
   const z = zoneOfCategory(category);
   if (!z) return null;
-  const c = CUSTOM.find((x) => x.gender === gender && x.garments?.[z] === name);
+  // Il più recente, preferendo quelli creati proprio per questo capo.
+  const list = CUSTOM.filter((x) => x.gender === gender && x.garments?.[z] === name)
+    .sort((a, b) => (b.main === name) - (a.main === name) || String(b.createdAt).localeCompare(String(a.createdAt)));
+  const c = list[0];
   return c ? { id: c.id, zone: z } : null;
 }

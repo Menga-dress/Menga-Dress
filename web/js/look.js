@@ -627,7 +627,7 @@ function chooseCustom(pieces, occasion) {
       const z = zoneOfCategory(p.category);
       if (!z || !p.subcategory || c.garments?.[z] !== p.subcategory) continue;
       score++;
-      if (!(MANNEQUIN[gender].have[p.category] || []).includes(p.subcategory)) special = true;
+      if (c.main === p.subcategory || !(MANNEQUIN[gender].have[p.category] || []).includes(p.subcategory)) special = true;
     }
     if ((special || (score && score >= zones)) && (!best || score > best.score)) best = { score, id: c.id };
   }

@@ -319,3 +319,4 @@ img.cut { object-fit: contain !important; background: var(--surface); padding: 4
 .bar b { text-align: right; }
 .gaps ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
 .gaps a { color: var(--accent); }
+a.btn { text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
