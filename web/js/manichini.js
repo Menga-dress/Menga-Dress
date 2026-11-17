@@ -125,6 +125,7 @@ export async function prepareMannequin(blob) {
   const RED = 25;
   const garment = new Uint8Array(N);
   const zone = new Uint8Array(N);
+  const feet = Math.round(H * 0.7) * W; // le scarpe stanno sempre in basso (non il bagliore dorato)
   for (let i = 0; i < N; i++) {
     if (!(S[i] > 0.35 && V[i] > 0.1)) continue;
     garment[i] = 1;
@@ -132,7 +133,8 @@ export async function prepareMannequin(blob) {
     if (hh < RED || hh > 335) zone[i] = 1; // rosso: giacca
     else if (hh >= 75 && hh < 170) zone[i] = 2; // verde: maglia
     else if (hh >= 200 && hh < 265) zone[i] = 3; // blu: pantaloni
-    else if (hh >= 40 && hh < 75) zone[i] = 4; // giallo: scarpe
+    else if (i >= feet && hh >= 40 && hh < 75) zone[i] = 4; // giallo: scarpe
+    else if (i >= feet && hh >= 30 && hh < 40 && V[i] > 0.4 && S[i] > 0.5) zone[i] = 4; // ocra (Gemini), non il bagliore dorato
   }
 
   // Pezzi piccoli: restano se vicini al capo principale, altrimenti via (riflessi del bordo dorato).
@@ -140,6 +142,11 @@ export async function prepareMannequin(blob) {
   for (let z = 1; z <= 4; z++) {
     const m = new Uint8Array(N);
     for (let i = 0; i < N; i++) m[i] = zone[i] === z ? 1 : 0;
+    // Scarpe: via le linee sottili (cerchio e bordo dorati hanno quasi lo stesso colore dell'ocra).
+    if (z === 4) {
+      const open = boxFilter(boxFilter(m, 5, false), 5, true);
+      for (let i = 0; i < N; i++) if (m[i] && !open[i]) { m[i] = 0; zone[i] = 0; }
+    }
     const big = keepBig(m, MIN[z]);
     const near = boxFilter(big, 51, true);
     const rest = new Uint8Array(N);
