@@ -12,7 +12,7 @@ import {
   mannequinMatch, currentGender, CUSTOM, ZONE_CATEGORIES, zoneOfCategory,
 } from './catalog.js';
 
-const APP_VERSION = '42'; // da aumentare a ogni modifica, si vede nelle Impostazioni
+const APP_VERSION = '43'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
 
@@ -1485,54 +1485,130 @@ async function renderProfile() {
   titleEl.textContent = 'Profilo';
   const p = (await db.getKV('profile')) || {};
   const items = await db.getAll('items');
+  const outfits = await db.getAll('outfits').catch(() => []);
   view.replaceChildren();
 
+  const num = (key, ph) => h('input', { type: 'number', inputmode: 'numeric', value: p[key] || '', placeholder: ph });
+  const text = (key, ph) => h('input', { type: 'text', value: p[key] || '', placeholder: ph });
   const f = {
-    gender: select({ uomo: 'Uomo', donna: 'Donna', entrambi: 'Entrambi / unisex' }, p.gender, { empty: 'Non specificato' }),
-    height: h('input', { type: 'number', inputmode: 'numeric', value: p.height || '', placeholder: 'cm' }),
-    weight: h('input', { type: 'number', inputmode: 'numeric', value: p.weight || '', placeholder: 'kg' }),
-    chest: h('input', { type: 'number', inputmode: 'numeric', value: p.chest || '', placeholder: 'cm' }),
-    waist: h('input', { type: 'number', inputmode: 'numeric', value: p.waist || '', placeholder: 'cm' }),
-    hips: h('input', { type: 'number', inputmode: 'numeric', value: p.hips || '', placeholder: 'cm' }),
-    shoe: h('input', { type: 'text', value: p.shoe || '', placeholder: 'es. 43' }),
-    topSize: h('input', { type: 'text', value: p.topSize || '', placeholder: 'es. M' }),
-    bottomSize: h('input', { type: 'text', value: p.bottomSize || '', placeholder: 'es. 48 o W32 L32' }),
+    height: num('height', 'cm'),
+    weight: num('weight', 'kg'),
+    chest: num('chest', 'cm'),
+    waist: num('waist', 'cm'),
+    hips: num('hips', 'cm'),
+    shoe: text('shoe', 'es. 43'),
+    topSize: text('topSize', 'es. M'),
+    bottomSize: text('bottomSize', 'es. 48 o W32 L32'),
     brandSizes: h('textarea', { placeholder: 'Una per riga, es.\nZara: M\nUniqlo: L' }, p.brandSizes || ''),
-    likedColors: h('input', { type: 'text', value: p.likedColors || '', placeholder: 'es. blu, verde oliva, beige' }),
-    avoidColors: h('input', { type: 'text', value: p.avoidColors || '', placeholder: 'es. arancione' }),
-    budget: h('input', { type: 'text', value: p.budget || '', placeholder: 'es. 50–100 € a capo' }),
     notes: h('textarea', { placeholder: 'es. preferisco vestiti comodi, non amo le cravatte' }, p.notes || ''),
   };
-  const styles = chipGroup(STYLES, p.styles, { multiple: true });
+  // Valori scelti coi chip: si salvano come prima (testo), così lo stylist li legge uguale.
+  let gender = p.gender || '';
+  let budget = p.budget || '';
+  const split = (v) => String(v || '').toLowerCase().split(/[,;]+/).map((x) => x.trim()).filter(Boolean);
+  const liked = new Set(split(p.likedColors));
+  const avoid = new Set(split(p.avoidColors));
+  // Colori scritti a mano che non sono nella tavolozza: si tengono.
+  const extraLiked = [...liked].filter((c) => !PALETTE[c]);
+  const extraAvoid = [...avoid].filter((c) => !PALETTE[c]);
 
-  const save = async () => {
-    const out = { styles: styles.value() };
+  const status = h('span', { class: 'save-state' });
+  const bar = h('i');
+  const pct = h('strong');
+  let timer = 0;
+  const collect = () => {
+    const out = { ...p, styles: styles.value(), gender, budget,
+      likedColors: [...liked].join(', '), avoidColors: [...avoid].join(', ') };
     for (const [k, el] of Object.entries(f)) out[k] = el.value.trim();
-    await db.setKV('profile', out);
-    toast('Profilo salvato');
+    return out;
   };
+  const paintProgress = () => {
+    const o = collect();
+    const keys = ['gender', 'height', 'weight', 'shoe', 'topSize', 'bottomSize', 'styles', 'likedColors', 'budget', 'chest', 'waist'];
+    const done = keys.filter((k) => (Array.isArray(o[k]) ? o[k].length : o[k])).length;
+    const v = Math.round((done / keys.length) * 100);
+    bar.style.width = `${v}%`;
+    pct.textContent = `${v}%`;
+  };
+  const save = () => {
+    paintProgress();
+    // Salvataggio subito a ogni modifica: niente da perdere se si cambia scheda.
+    const mine = ++timer;
+    db.setKV('profile', collect()).then(() => { if (mine === timer) status.textContent = 'Salvato ✓'; });
+  };
+  for (const el of Object.values(f)) el.addEventListener('input', save);
+
+  const genderChips = chipGroup({ uomo: 'Uomo', donna: 'Donna', entrambi: 'Entrambi' }, gender, {
+    onChange: (v) => {
+      gender = v;
+      // Il manichino segue il profilo (si cambia anche col tasto ♂/♀ in alto).
+      if ((v === 'uomo' || v === 'donna') && currentGender() !== v) {
+        db.setKV('profile', collect()).then(() => setTheme(v));
+      } else save();
+    },
+  });
+  const styles = chipGroup(STYLES, p.styles, { multiple: true, onChange: save });
+  const sizeChips = (input, sizes) => chipGroup(Object.fromEntries(sizes.map((x) => [x, x])), input.value, {
+    onChange: (v) => { input.value = v; save(); },
+  });
+  const budgetChips = chipGroup({
+    'fino a 30 € a capo': '€ · fino a 30',
+    '30–80 € a capo': '€€ · 30–80',
+    '80–150 € a capo': '€€€ · 80–150',
+    'oltre 150 € a capo': '€€€€ · oltre 150',
+  }, budget, { onChange: (v) => { budget = v; save(); } });
+
+  const colorWrap = h('div');
+  const paintColors = () => {
+    const row = (set, other, extra) => h('div', { class: 'chips swatches' }, Object.keys(PALETTE).map((name) => {
+      const [r, g, b] = PALETTE[name];
+      return h('button', {
+        type: 'button', class: 'chip', 'aria-pressed': String(set.has(name)), title: name,
+        onclick: () => {
+          if (set.has(name)) set.delete(name); else { set.add(name); other.delete(name); }
+          paintColors();
+          save();
+        },
+      }, h('span', { class: 'swatch', style: `background: rgb(${r},${g},${b})` }), name);
+    }), extra.map((x) => h('span', { class: 'chip', 'aria-pressed': 'true' }, x)));
+    colorWrap.replaceChildren(
+      h('div', { class: 'field' }, h('span', {}, 'Colori che ami'), row(liked, avoid, extraLiked)),
+      h('div', { class: 'field' }, h('span', {}, 'Colori da evitare'), row(avoid, liked, extraAvoid)),
+    );
+  };
+  paintColors();
 
   const worn = items.filter((i) => i.timesWorn).length;
+  const wornOutfits = outfits.filter((o) => o.worn).length;
+  const section = (title, hint, ...body) => h('section', { class: 'card profile-sec' },
+    h('h2', {}, title), hint ? h('p', { class: 'hint' }, hint) : null, ...body);
+
   view.append(
-    h('div', { class: 'card' },
-      h('p', { class: 'stat' }, `${items.length} capi nell'armadio · ${worn} indossati almeno una volta`)),
-    h('h2', {}, 'Chi sei'),
-    field('Abbigliamento', f.gender),
-    h('h2', {}, 'Misure'),
-    h('div', { class: 'two' }, field('Altezza (cm)', f.height), field('Peso (kg)', f.weight)),
-    h('div', { class: 'two' }, field('Torace (cm)', f.chest), field('Vita (cm)', f.waist)),
-    h('div', { class: 'two' }, field('Fianchi (cm)', f.hips), field('Scarpe (EU)', f.shoe)),
-    h('h2', {}, 'Taglie'),
-    h('div', { class: 'two' }, field('Parte sopra', f.topSize), field('Parte sotto', f.bottomSize)),
-    field('Taglie per marca', f.brandSizes),
-    h('h2', {}, 'Gusti'),
-    h('div', { class: 'field' }, h('span', {}, 'Stili preferiti'), styles),
-    field('Colori che ami', f.likedColors),
-    field('Colori da evitare', f.avoidColors),
-    field('Budget per capo', f.budget),
-    field('Note', f.notes),
-    h('button', { class: 'btn primary block', type: 'button', onclick: save }, 'Salva profilo'),
+    h('div', { class: 'card profile-head' },
+      h('div', { class: 'profile-stats' },
+        h('div', {}, h('b', {}, String(items.length)), h('small', {}, 'capi')),
+        h('div', {}, h('b', {}, String(worn)), h('small', {}, 'indossati')),
+        h('div', {}, h('b', {}, String(wornOutfits)), h('small', {}, 'outfit'))),
+      h('div', { class: 'profile-progress' },
+        h('div', { class: 'row' }, h('span', {}, 'Profilo completo al ', pct), status),
+        h('div', { class: 'meter' }, bar),
+        h('p', { class: 'hint' }, 'Più lo completi, più gli outfit e i link per comprare sono su misura per te. Si salva da solo.'))),
+    section('Chi sei', 'Sceglie i capi proposti e il manichino.', genderChips),
+    section('Taglie', 'Servono per cercare online i capi nella tua taglia.',
+      field('Parte sopra', f.topSize), sizeChips(f.topSize, ['XS', 'S', 'M', 'L', 'XL', 'XXL']),
+      field('Parte sotto', f.bottomSize),
+      field('Scarpe (EU)', f.shoe), sizeChips(f.shoe, ['38', '39', '40', '41', '42', '43', '44', '45', '46']),
+      field('Taglie per marca', f.brandSizes)),
+    section('Misure', 'Facoltative: aiutano quando una marca veste diversa.',
+      h('div', { class: 'two' }, field('Altezza (cm)', f.height), field('Peso (kg)', f.weight)),
+      h('div', { class: 'two' }, field('Torace (cm)', f.chest), field('Vita (cm)', f.waist)),
+      field('Fianchi (cm)', f.hips)),
+    section('Il tuo stile', 'Tocca gli stili che ti somigliano: le proposte li preferiscono.', styles),
+    section('Colori', 'Tocca un colore che ami o che vuoi evitare.', colorWrap),
+    section('Budget per capo', null, budgetChips),
+    section('Note', null, f.notes),
   );
+  paintProgress();
 }
 
 // ---------- Impostazioni ----------
@@ -1807,6 +1883,45 @@ document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState === 'visible' && await sync.currentUser().catch(() => null)) runSync({ quiet: true });
 });
 
+// ---------- Benvenuto ----------
+// Guida di tre schermate al primo avvio (solo se l'armadio è vuoto: chi la usa già non la vede).
+const WELCOME = [
+  ['👕', 'Fotografa i tuoi capi', 'Tocca + nell\'Armadio e scatta una foto. L\'app toglie lo sfondo e riconosce da sola tipo e colori.'],
+  ['✨', 'Ogni giorno un outfit', 'In Outfit scegli umore e occasione: l\'app guarda il meteo e ti propone 3 abbinamenti sul manichino. Se manca qualcosa ti dice cosa prendere.'],
+  ['📅', 'Tieni il diario', 'Segna cosa indossi e pianifica la settimana. Nel Profilo metti taglie e gusti: le proposte diventano su misura.'],
+];
+async function welcome() {
+  try {
+    if (localStorage.getItem('menga-benvenuto')) return;
+    const done = () => { try { localStorage.setItem('menga-benvenuto', '1'); } catch (e) { /* niente */ } };
+    if ((await db.getAll('items')).length) { done(); return; }
+    await new Promise((resolve) => {
+      let step = 0;
+      openDialog((close) => {
+        const box = h('div', { class: 'sheet welcome' });
+        const finish = () => { done(); close(); resolve(); };
+        const paint = () => {
+          const [icon, title, text] = WELCOME[step];
+          const last = step === WELCOME.length - 1;
+          box.replaceChildren(
+            step === 0 ? h('div', { class: 'login-head' }, h('img', { src: 'icons/icon-192-v3.png', alt: '', class: 'login-logo' }), h('h1', {}, 'Benvenuto in Menga Dress')) : null,
+            h('div', { class: 'welcome-icon', 'aria-hidden': 'true' }, icon),
+            h('h2', {}, title),
+            h('p', {}, text),
+            h('div', { class: 'welcome-dots' }, WELCOME.map((_, i) => h('i', { class: i === step ? 'on' : '' }))),
+            h('button', { class: 'btn primary block', type: 'button', onclick: () => { if (last) finish(); else { step++; paint(); } } }, last ? 'Inizia' : 'Avanti'),
+            last ? null : h('button', { class: 'link-btn', type: 'button', onclick: finish }, 'Salta'),
+          );
+        };
+        paint();
+        return box;
+      });
+      // Chiusa col tasto indietro: conta come vista.
+      document.querySelector('dialog:last-of-type')?.addEventListener('close', () => { done(); resolve(); });
+    });
+  } catch (e) { /* senza localStorage o IndexedDB si va avanti */ }
+}
+
 // ---------- navigazione ----------
 
 const routes = { armadio: renderWardrobe, outfit: renderOutfit, diario: renderDiary, profilo: renderProfile };
@@ -1829,7 +1944,7 @@ loadCustom().catch(() => {}).then(route);
 // Arrivati manichini pubblici nuovi: si ridisegna la pagina (se non c'è una scheda aperta).
 window.addEventListener('manichini', () => { if (!document.querySelector('dialog[open]')) route(); });
 db.askPersistence();
-initAccount();
+welcome().then(initAccount);
 // L'app impara dai capi già salvati (in sottofondo, solo se il modello è già sul telefono).
 if (isModelCached()) setTimeout(() => { learnFromWardrobe().catch(() => {}); }, 4000);
 

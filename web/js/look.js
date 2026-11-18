@@ -702,6 +702,13 @@ function photoColors(pieces, occasion, base) {
   const layered = !outer && ['felpa-zip', 'camicia-aperta', 'sport', 'viaggio', 'casual',
     'donna-casual', 'donna-camicia', 'donna-sport', 'donna-viaggio'].includes(base);
   const tee = colorOf(lum(top) > 0.8 ? 'blu navy' : 'bianco');
+  // T-shirt, polo, top o maglia sportiva non si portano aperti: restano la maglia sotto,
+  // col loro colore, e sopra c'è una camicia aperta neutra che stacca.
+  const topSub = String(pieces.find((p) => p.category === 'top')?.subcategory || '').toLowerCase();
+  const teeLike = layered && /t-shirt|polo|^top|sportiva/.test(topSub);
+  const sporty = /sport/.test(base);
+  const overshirt = !teeLike ? null : sporty ? colorOf(lum(top) < 0.35 ? 'grigio' : 'nero')
+    : colorOf(lum(top) < 0.35 ? 'beige' : lum(top) > 0.75 ? 'blu navy' : 'denim');
   // Blazer senza giacca proposta: blazer suggerito, grigio se la maglia è dello stesso colore.
   let jacket = outer;
   if (!jacket && /^blazer|^donna-lavoro/.test(base)) {
@@ -716,13 +723,14 @@ function photoColors(pieces, occasion, base) {
   const dressP = piece('dress');
   // Seconda tinta e fantasia del capo vero che occupa la zona (se c'è).
   const withDetail = (c, p) => (p && c ? { c, c2: colorOf(p.colors?.[1]), pattern: p.pattern } : c);
-  const zone1 = piece('outerwear') || (suit ? dressP : jacket ? null : piece('top'));
-  const zone2 = layered || (suit && !get('top')) ? null : piece('top') || (suit ? null : dressP);
+  const zone1 = piece('outerwear') || (suit ? dressP : jacket || overshirt ? null : piece('top'));
+  const open = layered && !teeLike;
+  const zone2 = open || (suit && !get('top')) ? null : piece('top') || (suit ? null : dressP);
   return {
     // Completo e tuta: giacca e pantaloni dello stesso colore. Felpa, camicia o giubbotto aperti
     // senza giacca proposta prendono il colore della maglia, con una t-shirt sotto.
-    1: withDetail(jacket || top, zone1),
-    2: withDetail(layered || (suit && !get('top')) ? tee : top, zone2),
+    1: withDetail(jacket || overshirt || top, zone1),
+    2: withDetail(open || (suit && !get('top')) ? tee : top, zone2),
     3: withDetail(get('bottom') || dress || colorOf(def.bottom[1]), piece('bottom') || dressP),
     4: withDetail(get('shoes') || colorOf(def.shoes[1]), piece('shoes')),
   };
