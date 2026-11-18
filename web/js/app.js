@@ -12,7 +12,7 @@ import {
   mannequinMatch, currentGender, CUSTOM, ZONE_CATEGORIES, zoneOfCategory,
 } from './catalog.js';
 
-const APP_VERSION = '43'; // da aumentare a ogni modifica, si vede nelle Impostazioni
+const APP_VERSION = '44'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
 
@@ -1680,6 +1680,8 @@ async function openSettings() {
       mannequinSection(),
       h('h2', {}, 'Tema e manichino'),
       chipGroup(THEMES, document.documentElement.dataset.theme || 'uomo', { onChange: setTheme }),
+      h('h2', {}, 'Guida'),
+      h('button', { class: 'btn block', type: 'button', onclick: () => { close(); welcome(true); } }, 'Rivedi la guida'),
       h('p', { class: 'hint' }, `Versione ${APP_VERSION}`),
     );
   });
@@ -1890,11 +1892,13 @@ const WELCOME = [
   ['✨', 'Ogni giorno un outfit', 'In Outfit scegli umore e occasione: l\'app guarda il meteo e ti propone 3 abbinamenti sul manichino. Se manca qualcosa ti dice cosa prendere.'],
   ['📅', 'Tieni il diario', 'Segna cosa indossi e pianifica la settimana. Nel Profilo metti taglie e gusti: le proposte diventano su misura.'],
 ];
-async function welcome() {
+async function welcome(force = false) {
   try {
-    if (localStorage.getItem('menga-benvenuto')) return;
     const done = () => { try { localStorage.setItem('menga-benvenuto', '1'); } catch (e) { /* niente */ } };
-    if ((await db.getAll('items')).length) { done(); return; }
+    if (!force) {
+      if (localStorage.getItem('menga-benvenuto')) return;
+      if ((await db.getAll('items')).length) { done(); return; }
+    }
     await new Promise((resolve) => {
       let step = 0;
       openDialog((close) => {
