@@ -12,7 +12,7 @@ import {
   mannequinMatch, currentGender, CUSTOM, ZONE_CATEGORIES, zoneOfCategory,
 } from './catalog.js';
 
-const APP_VERSION = '41'; // da aumentare a ogni modifica, si vede nelle Impostazioni
+const APP_VERSION = '42'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
 
@@ -1069,7 +1069,7 @@ async function renderOutfit() {
       h('div', { class: 'row end' }, h('a', { class: 'btn', href: '#/diario' }, 'Diario'), wearBtn));
   }
 
-  view.append(
+  view.append(...[
     weatherBox,
     plannedCard,
     fewItems ? h('p', { class: 'hint' }, items.length
@@ -1082,7 +1082,7 @@ async function renderOutfit() {
     go,
     h('div', { class: 'spacer' }),
     resultsBox,
-  );
+  ].filter(Boolean));
 
   if (outfitState.results) {
     paintResults(resultsBox, items);
