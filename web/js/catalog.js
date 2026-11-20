@@ -225,12 +225,15 @@ export function setCustomMannequins(list) { CUSTOM.splice(0, CUSTOM.length, ...(
 export const ZONE_CATEGORIES = { 1: ['outerwear', 'dress'], 2: ['top'], 3: ['bottom'], 4: ['shoes'] };
 export const zoneOfCategory = (cat) => Number(Object.keys(ZONE_CATEGORIES).find((z) => ZONE_CATEGORIES[z].includes(cat))) || 0;
 
+// Prima i tuoi, poi quelli per tutti, poi quelli resi definitivi (nel codice dell'app).
+const rank = (c) => (c.fixed ? 2 : c.shared ? 1 : 0);
+
 function customFor(category, name, gender) {
   const z = zoneOfCategory(category);
   if (!z) return null;
   // Il più recente, preferendo quelli creati proprio per questo capo.
   const list = CUSTOM.filter((x) => x.gender === gender && x.garments?.[z] === name)
-    .sort((a, b) => (b.main === name) - (a.main === name) || (!b.shared) - (!a.shared)
+    .sort((a, b) => (b.main === name) - (a.main === name) || rank(a) - rank(b)
       || String(b.createdAt).localeCompare(String(a.createdAt)));
   const c = list[0];
   return c ? { id: c.id, zone: z } : null;

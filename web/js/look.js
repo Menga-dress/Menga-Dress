@@ -679,7 +679,8 @@ function loadPhoto(name) {
     if (name.startsWith('mio:')) {
       const c = CUSTOM.find((x) => `mio:${x.id}` === name);
       if (!c) return Promise.reject(new Error('manichino non trovato'));
-      urls = [URL.createObjectURL(c.base), URL.createObjectURL(c.zone)];
+      // Definitivi: indirizzi delle immagini nel codice; tuoi e per tutti: immagini salvate sul telefono.
+      urls = [c.base, c.zone].map((b) => (typeof b === 'string' ? b : URL.createObjectURL(b)));
     }
     photos[name] = Promise.all(urls.map(load))
       .then(([base, zone]) => ({ base: pixels(base), zone: pixels(zone) }))

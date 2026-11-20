@@ -1,5 +1,5 @@
 // Rende l'app installabile e utilizzabile anche offline (le chiamate AI e meteo richiedono la rete).
-const CACHE = 'dress-v44';
+const CACHE = 'dress-v45';
 
 // Modello per riconoscere i capi (circa 23 MB): scaricato solo quando serve e tenuto anche
 // dopo gli aggiornamenti dell'app. Se cambia il modello, cambiare questo nome.
@@ -60,6 +60,7 @@ const SHELL = [
   './img/manichino/blazer-pochette-zone.png',
   './img/manichino/blazer-lavoro.jpg',
   './img/manichino/blazer-lavoro-zone.png',
+  './img/manichino/collezione.json',
   './icons/favicon-v3.png',
   './icons/icon-192-v3.png',
   './icons/icon-512-v3.png',

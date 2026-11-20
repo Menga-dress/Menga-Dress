@@ -1,0 +1,60 @@
+name: Manichini definitivi
+
+# Quando l'amministratore preme "Rendi definitivo" su un manichino, l'app lo segna nel catalogo
+# su Supabase. Questa azione (ogni mezz'ora, oppure a mano da Actions → Run workflow) lo copia
+# nel codice dell'app (web/img/manichino/collezione/), lo salva su main e ripubblica il sito.
+on:
+  schedule:
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: manichini-definitivi
+  cancel-in-progress: false
+
+jobs:
+  copia:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.copia.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - id: copia
+        run: python3 tools/manichino/definitivi.py
+      - name: Salva su main
+        if: steps.copia.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898732+github-actions[bot]@users.noreply.github.com"
+          git add web/img/manichino/collezione web/img/manichino/collezione.json
+          git commit -m "Manichini resi definitivi dall'amministratore"
+          git push origin HEAD:main
+
+  # Un push fatto da un'azione non fa partire "Pubblica su GitHub Pages": si pubblica qui.
+  pubblica:
+    needs: copia
+    if: needs.copia.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+      - id: deployment
+        uses: actions/deploy-pages@v4
