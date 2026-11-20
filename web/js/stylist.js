@@ -16,6 +16,104 @@ const MOOD_PREFS = {
   sicuro: { styles: ['classic', 'smart_casual', 'minimal'], bright: 0, patterns: -0.5 },
 };
 
+// Dress code: eleganza fissa e capi ammessi. "only" = solo questi tipi per categoria, "no" = tipi vietati.
+// I capi con un nome libero (non tra i tipi dell'app) passano se la loro formalità è vicina.
+export const DRESS_CODES = {
+  libero: { label: 'Libero', icon: '✨', text: 'Nessuna regola: decide l\'occasione.' },
+  casual: {
+    label: 'Casual', icon: '👕', formality: [1, 2], check: 'comodo, senza capi da cerimonia',
+    text: 'Jeans, t-shirt, felpa e sneakers. Niente capi da cerimonia.',
+    no: ['Camicia elegante', 'Pantaloni eleganti', 'Abito elegante', 'Completo', 'Scarpe eleganti', 'Décolleté', 'Blazer'],
+  },
+  smart: {
+    label: 'Smart casual', icon: '👞', formality: [2, 4], check: 'curato ma non formale',
+    text: 'Chino o jeans scuri, camicia o polo, mocassini o sneakers pulite. Niente felpe, tute o abbigliamento sportivo.',
+    no: ['Felpa', 'Maglia sportiva', 'Pantaloni sportivi', 'Leggings', 'Bermuda', 'Cargo', 'Scarpe da corsa', 'Tuta', 'Completo', 'Abito elegante', 'Sandali'],
+  },
+  business: {
+    label: 'Business', icon: '👔', formality: [4, 5], jacket: true, check: 'giacca presente, niente jeans né sneakers',
+    text: 'Giacca e camicia, pantalone elegante, scarpe in pelle. Niente jeans, felpe o sneakers.',
+    only: {
+      top: ['Camicia', 'Camicia elegante', 'Camicetta', 'Maglione', 'Cardigan'],
+      bottom: ['Pantaloni eleganti', 'Chino', 'Gonna'],
+      dress: ['Completo', 'Abito elegante', 'Vestito'],
+      outerwear: ['Blazer', 'Cappotto', 'Trench'],
+      shoes: ['Scarpe eleganti', 'Mocassini', 'Décolleté', 'Stivaletti'],
+    },
+  },
+  elegante: {
+    label: 'Elegante', icon: '🎩', formality: [4, 5], jacket: true, check: 'abito e scarpe eleganti',
+    text: 'Abito o completo, camicia elegante e scarpe eleganti. Per cerimonie, matrimoni e serate importanti.',
+    only: {
+      top: ['Camicia elegante', 'Camicetta'],
+      bottom: ['Pantaloni eleganti', 'Gonna'],
+      dress: ['Completo', 'Abito elegante'],
+      outerwear: ['Blazer', 'Cappotto'],
+      shoes: ['Scarpe eleganti', 'Décolleté'],
+    },
+  },
+  sportivo: {
+    label: 'Sportivo', icon: '🏃', formality: [1, 2], check: 'tutto comodo e tecnico',
+    text: 'Abbigliamento tecnico e scarpe da corsa: per palestra, corsa o partita.',
+    only: {
+      top: ['Maglia sportiva', 'T-shirt', 'Felpa'],
+      bottom: ['Pantaloni sportivi', 'Leggings', 'Bermuda'],
+      dress: ['Tuta'],
+      outerwear: ['Piumino', 'Impermeabile', 'Giubbotto'],
+      shoes: ['Scarpe da corsa', 'Sneakers'],
+    },
+  },
+};
+
+// Il capo va bene per il dress code?
+export function fitsDressCode(it, code) {
+  const dc = DRESS_CODES[code];
+  if (!dc || !dc.formality) return true;
+  const sub = findSubtype(it.category, it.subcategory);
+  if (!sub) {
+    const f = it.formality || 3;
+    return f >= dc.formality[0] - 1 && f <= dc.formality[1] + 1;
+  }
+  if (dc.only?.[it.category]) return dc.only[it.category].includes(sub.name);
+  return !(dc.no || []).includes(sub.name);
+}
+
+// Legge un invito o un messaggio e indovina il dress code (e l'occasione). Tutto sul telefono.
+const INVITE_RULES = [
+  [/black tie|white tie|cravatta nera|smoking|frac|gala|abito lungo|cerimoni|matrimoni|nozze|sposi|battesim|comunion|cresim|laurea/, 'elegante', 'evento'],
+  [/cocktail|formale|formal\b|elegant/, 'elegante', 'serata'],
+  [/business casual|smart casual|smart|aperitiv|cena|ristorante|teatro|elegante informale/, 'smart', 'serata'],
+  [/business|giacca e cravatta|colloquio|riunione|meeting|conferenza|ufficio|cliente|presentazione|lavoro/, 'business', 'lavoro'],
+  [/sport|palestra|gym|corsa|running|calcetto|partita|trekking|escursion|bici/, 'sportivo', 'sport'],
+  [/casual|informale|grigliata|barbecue|picnic|spiaggia|mare|festa|compleanno|amici|gita/, 'casual', 'tempo_libero'],
+];
+export function readInvite(text) {
+  const all = String(text || '').toLowerCase();
+  // Se l'invito scrive "dress code: …", conta prima quello che segue.
+  const dcAt = all.search(/dress ?code|abbigliamento/);
+  if (dcAt >= 0) {
+    const r = readInviteText(all.slice(dcAt).slice(0, 60));
+    if (r) {
+      const occ = readInviteText(all.slice(0, dcAt));
+      return occ ? { ...r, occasion: occ.occasion } : r;
+    }
+  }
+  return readInviteText(all);
+}
+
+function readInviteText(t) {
+  for (const [re, code, occasion] of INVITE_RULES) {
+    const m = t.match(re);
+    if (m) {
+      // La parola intera, per dire cosa ho letto ("aperitivo", non "aperitiv").
+      let end = m.index + m[0].length;
+      while (end < t.length && /\p{L}/u.test(t[end])) end++;
+      return { code, occasion, word: t.slice(m.index, end) };
+    }
+  }
+  return null;
+}
+
 const SEASON_LABEL = { spring: 'primavera', summer: 'estate', autumn: 'autunno', winter: 'inverno' };
 
 function currentSeason(weather) {
@@ -147,11 +245,19 @@ function harmony(pieces, ctx) {
 
 function explain(pieces, ctx, extras) {
   const parts = [];
+  if (ctx.code) {
+    parts.push(`Adatto al dress code ${DRESS_CODES[ctx.code].label.toLowerCase()}`);
+    return explainRest(pieces, ctx, extras, parts);
+  }
   const occ = { lavoro: 'il lavoro', tempo_libero: 'il tempo libero', serata: 'la serata', sport: 'lo sport', evento: 'un evento', viaggio: 'il viaggio' }[ctx.occasion] || 'oggi';
   const [lo, hi] = ctx.formality;
   const fits = pieces.every((x) => (x.formality || 3) >= lo - 0.5 && (x.formality || 3) <= hi + 0.5);
   const allIdeas = pieces.every((x) => x.idea);
   parts.push(fits || allIdeas ? `Livello di eleganza giusto per ${occ}` : `La scelta più adatta per ${occ} tra i tuoi capi`);
+  return explainRest(pieces, ctx, extras, parts);
+}
+
+function explainRest(pieces, ctx, extras, parts) {
   const colors = pieces.flatMap((p) => (p.colors || []).slice(0, 1));
   const bright = [...new Set(colors.filter((c) => !isNeutral(c)))];
   if (!bright.length) parts.push('colori neutri che stanno bene insieme');
@@ -169,18 +275,22 @@ function titleFor(pieces, ctx) {
   return `${names[ctx.occasion] || 'Look'} ${color ? 'in ' + color : ''}`.trim();
 }
 
-export function suggestOutfits({ items, profile, history, mood, occasion, weather, count = 3, seed = Math.random() }) {
+export function suggestOutfits({ items, profile, history, mood, occasion, weather, dressCode = 'libero', count = 3, seed = Math.random() }) {
+  const dc = DRESS_CODES[dressCode]?.formality ? DRESS_CODES[dressCode] : null;
+  const ok = (it) => !dc || fitsDressCode(it, dressCode);
   // Ai tuoi capi si aggiungono le idee: se in una categoria hai già qualcosa, l'idea
   // parte svantaggiata e vince solo se i tuoi capi non vanno proprio bene.
-  const ideas = ideaItems(profile?.gender);
-  const owned = (cat) => items.filter((i) => i.category === cat);
+  // Con un dress code restano solo i capi ammessi (tuoi e idee).
+  const ideas = ideaItems(profile?.gender).filter(ok);
+  const owned = (cat) => items.filter((i) => i.category === cat && ok(i));
   const by = (cat) => [...owned(cat), ...ideas.filter((i) => i.category === cat)];
   const ideaPenalty = (it) => (it.idea ? (owned(it.category).length ? 6 : 0) : 0);
   const moodPrefs = MOOD_PREFS[mood] || MOOD_PREFS.rilassato;
   let formality = [...(OCCASION_FORMALITY[occasion] || [1, 3])];
   if (moodPrefs.formality) formality = formality.map((v) => Math.min(5, Math.max(1, v + moodPrefs.formality)));
+  if (dc) formality = [...dc.formality]; // il dress code vince sull'occasione e sull'umore
   const ctx = {
-    moodKey: mood, occasion, weather, history,
+    moodKey: mood, occasion, weather, history, code: dc ? dressCode : null,
     mood: moodPrefs,
     formality,
     season: currentSeason(weather),
@@ -203,7 +313,7 @@ export function suggestOutfits({ items, profile, history, mood, occasion, weathe
   const dresses = ranked(by('dress'));
   const shoes = ranked(by('shoes'));
   const outers = ranked(by('outerwear'));
-  const needOuter = weather ? (weather.max <= 17 || weather.rain >= 50) : ctx.season === 'winter';
+  const coldOrRain = weather ? (weather.max <= 17 || weather.rain >= 50) : ctx.season === 'winter';
 
   const bases = [];
   for (const t of tops) for (const b of bottoms) bases.push({ pieces: [t.it, b.it], s: t.s + b.s });
@@ -215,12 +325,14 @@ export function suggestOutfits({ items, profile, history, mood, occasion, weathe
     const pieces = [...base.pieces];
     let s = base.s;
     const extras = {};
-    if (needOuter) {
+    // Business ed Elegante vogliono la giacca, a meno che la base sia già un completo o un abito.
+    const needOuter = coldOrRain || (dc?.jacket && !pieces.some((p) => p.category === 'dress'));
+    if (needOuter && outers.length) {
       const o = outers.map((x) => ({ x, v: x.s + harmony([...pieces, x.it], ctx) })).sort((a, b) => b.v - a.v)[0];
       if (weather?.max <= 10 && warmthOf(o.x.it) < 3) s -= 1;
-      pieces.push(o.x.it); s += o.x.s; extras.outer = o.x.it;
+      pieces.push(o.x.it); s += o.x.s; if (coldOrRain) extras.outer = o.x.it;
     }
-    {
+    if (shoes.length) {
       const sh = shoes.map((x) => ({ x, v: x.s + harmony([...pieces, x.it], ctx) })).sort((a, b) => b.v - a.v)[0];
       pieces.push(sh.x.it); s += sh.x.s;
     }
@@ -253,6 +365,7 @@ export function suggestOutfits({ items, profile, history, mood, occasion, weathe
     pieces: c.pieces,
     reason: explain(c.pieces, ctx, c.extras),
     ideas: c.pieces.filter((p) => p.idea),
+    dressCode: dc ? { key: dressCode, label: dc.label, icon: dc.icon, check: dc.check } : null,
   }));
 }
 

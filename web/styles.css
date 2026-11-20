@@ -354,3 +354,10 @@ dialog .welcome { text-align: center; padding: 20px 18px; }
 .welcome-dots i { width: 8px; height: 8px; border-radius: 50%; background: var(--line); }
 .welcome-dots i.on { background: var(--accent); }
 .welcome .link-btn { margin-top: 8px; }
+
+/* Dress code */
+.dc-note { margin-top: 4px; }
+.dc-badge { font-size: 0.9rem; margin: 2px 0 6px; color: var(--muted); }
+.dc-badge.ok { color: var(--accent); }
+.dc-badge.warn { color: var(--danger); }
+.sheet textarea { width: 100%; }
