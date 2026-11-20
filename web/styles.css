@@ -227,6 +227,7 @@ textarea { min-height: 72px; resize: vertical; }
 .filters[open] > :not(summary) { margin-left: 16px; margin-right: 16px; }
 
 .outfit.fresh { border-color: var(--accent); }
+.more-ideas { margin-bottom: 16px; border-color: var(--accent); color: var(--accent); }
 .outfit .fresh-tag { color: var(--accent); font-weight: 600; font-size: 13px; margin: 0 0 4px; }
 
 .outfit h3 { margin: 0 0 4px; font-size: 17px; }

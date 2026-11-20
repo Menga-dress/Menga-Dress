@@ -276,19 +276,27 @@ function titleFor(pieces, ctx) {
 }
 
 // fresh: un outfit con UN capo che non hai (tipo e colore nuovi per te), abbinato ai tuoi capi.
-export function suggestOutfits({ items, profile, history, mood, occasion, weather, dressCode = 'libero', count = 3, seed = Math.random(), fresh = false }) {
+// ownOnly: solo capi del tuo armadio (se non bastano per un outfit, si torna alle idee).
+export function suggestOutfits(args) {
+  if (args.ownOnly) {
+    const own = suggestOutfitsCore({ ...args, ownOnly: true });
+    if (own.length) return own;
+  }
+  return suggestOutfitsCore({ ...args, ownOnly: false });
+}
+
+function suggestOutfitsCore({ items, profile, history, mood, occasion, weather, dressCode = 'libero', count = 3, seed = Math.random(), fresh = false, ownOnly = false }) {
   const dc = DRESS_CODES[dressCode]?.formality ? DRESS_CODES[dressCode] : null;
   const ok = (it) => !dc || fitsDressCode(it, dressCode);
   // Ai tuoi capi si aggiungono le idee: se in una categoria hai già qualcosa, l'idea
   // parte svantaggiata e vince solo se i tuoi capi non vanno proprio bene.
   // Con un dress code restano solo i capi ammessi (tuoi e idee).
-  const ideas = ideaItems(profile?.gender).filter(ok);
+  const ideas = ownOnly || fresh ? [] : ideaItems(profile?.gender).filter(ok);
   const owned = (cat) => items.filter((i) => i.category === cat && ok(i));
   const by = (cat) => [...owned(cat), ...ideas.filter((i) => i.category === cat)];
   const have = new Set(items.map((i) => `${i.subcategory}|${i.colors?.[0] || ''}`));
   const ideaPenalty = (it) => {
     if (!it.idea) return 0;
-    if (fresh) return have.has(`${it.subcategory}|${it.colors[0]}`) ? 99 : 0; // uguale a un tuo capo: non è una novità
     return owned(it.category).length ? 6 : 0;
   };
   const moodPrefs = MOOD_PREFS[mood] || MOOD_PREFS.rilassato;
@@ -344,8 +352,9 @@ export function suggestOutfits({ items, profile, history, mood, occasion, weathe
     }
     s += harmony(pieces, ctx) * 1.5;
     return { pieces, s, extras };
-  }).filter((c) => !fresh || (c.pieces.filter((p) => p.idea).length === 1 && c.pieces.some((p) => !p.idea)))
-    .sort((a, b) => b.s - a.s);
+  }).sort((a, b) => b.s - a.s);
+
+  if (fresh) return freshPick(candidates);
 
   // Scelgo outfit diversi tra loro: niente stessa parte sopra o sotto ripetuta.
   const chosen = [];
@@ -366,7 +375,46 @@ export function suggestOutfits({ items, profile, history, mood, occasion, weathe
     }
   }
 
-  return chosen.map((c) => ({
+  return finish(chosen);
+
+  // Capi nuovi: nei migliori outfit fatti coi tuoi capi provo a cambiare un pezzo con un capo
+  // che non hai (tipo o colore nuovo), e tengo gli scambi che stanno meglio, uno diverso per proposta.
+  function freshPick(list) {
+    const pool = ideaItems(profile?.gender).filter(ok).filter((i) => !have.has(`${i.subcategory}|${i.colors[0]}`));
+    const swaps = [];
+    for (const c of list.slice(0, 12)) {
+      c.pieces.forEach((p, k) => {
+        for (const i of pool) {
+          if (i.category !== p.category) continue;
+          const pieces = [...c.pieces];
+          pieces[k] = i;
+          const novel = !items.some((x) => x.subcategory === i.subcategory);
+          swaps.push({
+            pieces, extras: c.extras.outer === p ? { outer: i } : c.extras,
+            s: scoreItem(i, ctx) + harmony(pieces, ctx) * 1.5 + (novel ? 1 : 0) + rand() * 3,
+          });
+        }
+      });
+    }
+    swaps.sort((a, b) => b.s - a.s);
+    const out = [];
+    const types = new Set();
+    const cats = new Set();
+    const bases = new Set();
+    for (const c of swaps) {
+      const idea = c.pieces.find((p) => p.idea);
+      const base = c.pieces.filter((p) => !p.idea).map((p) => p.id).join('|');
+      // Capi nuovi di tipo e, se si può, di parte diversa (sopra, sotto, scarpe, giacca).
+      if (types.has(idea.subcategory) || bases.has(base) || (cats.has(idea.category) && swaps.some((x) => !cats.has(x.pieces.find((p) => p.idea).category)))) continue;
+      types.add(idea.subcategory); cats.add(idea.category); bases.add(base);
+      out.push(c);
+      if (out.length === count) break;
+    }
+    return finish(out);
+  }
+
+  function finish(list) {
+  return list.map((c) => ({
     fresh,
     title: fresh ? `Con ${articleFor(c.pieces.find((p) => p.idea))}` : titleFor(c.pieces, ctx),
     item_ids: c.pieces.map((p) => p.id),
@@ -375,13 +423,14 @@ export function suggestOutfits({ items, profile, history, mood, occasion, weathe
     ideas: c.pieces.filter((p) => p.idea),
     dressCode: dc ? { key: dressCode, label: dc.label, icon: dc.icon, check: dc.check } : null,
   }));
+  }
 }
 
 // "un blazer beige", "una camicia bianca", "dei jeans neri".
 function articleFor(it) {
   const n = ideaName(it);
   const sub = it.subcategory;
-  if (PLURAL_M.has(sub)) return `dei ${n}`;
+  if (PLURAL_M.has(sub)) return /^([aeiou]|s[bcdfgklmnpqrstvz]|z|gn|ps|x)/i.test(n) ? `degli ${n}` : `dei ${n}`;
   if (PLURAL_F.has(sub)) return `delle ${n}`;
   if (FEM.has(sub)) return `una ${n}`;
   return /^(s[bcdfgklmnpqrstvz]|z|gn|ps|x)/i.test(n) ? `uno ${n}` : `un ${n}`;
