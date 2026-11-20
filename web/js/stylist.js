@@ -280,7 +280,16 @@ function titleFor(pieces, ctx) {
 export function suggestOutfits(args) {
   if (args.ownOnly) {
     const own = suggestOutfitsCore({ ...args, ownOnly: true });
-    if (own.length) return own;
+    const count = args.count || 3;
+    if (own.length >= count || !own.length) {
+      if (own.length) return own;
+    } else {
+      // Coi tuoi capi non escono abbastanza outfit diversi: completo con capi da prendere.
+      const taken = new Set(own.map((o) => o.item_ids.join('|')));
+      const more = suggestOutfitsCore({ ...args, ownOnly: false, count: count * 3 })
+        .filter((o) => !taken.has(o.item_ids.join('|')));
+      return [...own, ...more].slice(0, count);
+    }
   }
   return suggestOutfitsCore({ ...args, ownOnly: false });
 }
@@ -335,23 +344,31 @@ function suggestOutfitsCore({ items, profile, history, mood, occasion, weather, 
   // Anche tutto da comprare va bene, ma il tuo armadio ha la precedenza.
   for (const b of bases) if (b.pieces.every((p) => p.idea) && items.length) b.s -= 4;
 
-  const candidates = bases.map((base) => {
-    const pieces = [...base.pieces];
-    let s = base.s;
-    const extras = {};
-    // Business ed Elegante vogliono la giacca, a meno che la base sia già un completo o un abito.
-    const needOuter = coldOrRain || (dc?.jacket && !pieces.some((p) => p.category === 'dress'));
-    if (needOuter && outers.length) {
-      const o = outers.map((x) => ({ x, v: x.s + harmony([...pieces, x.it], ctx) })).sort((a, b) => b.v - a.v)[0];
-      if (weather?.max <= 10 && warmthOf(o.x.it) < 3) s -= 1;
-      pieces.push(o.x.it); s += o.x.s; if (coldOrRain) extras.outer = o.x.it;
-    }
-    if (shoes.length) {
-      const sh = shoes.map((x) => ({ x, v: x.s + harmony([...pieces, x.it], ctx) })).sort((a, b) => b.v - a.v)[0];
-      pieces.push(sh.x.it); s += sh.x.s;
-    }
-    s += harmony(pieces, ctx) * 1.5;
-    return { pieces, s, extras };
+  // Per ogni base provo le 2 giacche e le 2 scarpe migliori: così anche con pochi capi
+  // ci sono abbastanza outfit diversi tra cui scegliere.
+  const candidates = bases.flatMap((base) => {
+    const needOuter = coldOrRain || (dc?.jacket && !base.pieces.some((p) => p.category === 'dress'));
+    const best = (list, pieces) => list.map((x) => ({ x, v: x.s + harmony([...pieces, x.it], ctx) }))
+      .sort((a, b) => b.v - a.v).slice(0, 2);
+    const outerOpts = needOuter && outers.length ? best(outers, base.pieces) : [null];
+    const out = [];
+    outerOpts.forEach((o, oi) => {
+      const withOuter = o ? [...base.pieces, o.x.it] : [...base.pieces];
+      const shoeOpts = shoes.length ? best(shoes, withOuter) : [null];
+      shoeOpts.forEach((sh, si) => {
+        const pieces = [...withOuter];
+        let s = base.s - (oi + si) * 0.5; // le alternative partono un po' indietro
+        const extras = {};
+        if (o) {
+          if (weather?.max <= 10 && warmthOf(o.x.it) < 3) s -= 1;
+          s += o.x.s; if (coldOrRain) extras.outer = o.x.it;
+        }
+        if (sh) { pieces.push(sh.x.it); s += sh.x.s; }
+        s += harmony(pieces, ctx) * 1.5;
+        out.push({ pieces, s, extras });
+      });
+    });
+    return out;
   }).sort((a, b) => b.s - a.s);
 
   if (fresh) return freshPick(candidates);
