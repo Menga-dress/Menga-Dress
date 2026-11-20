@@ -17,16 +17,51 @@ const KEY = 'manichini';
 // Nell'app si usano entrambi; i tuoi vengono prima.
 const SHARED = 'manichini-pubblici';
 
+// Terzo elenco: i manichini resi definitivi dall'amministratore. Stanno nel codice dell'app
+// (web/img/manichino/collezione.json + immagini in web/img/manichino/collezione/), li mette lì
+// da sola l'azione GitHub "Manichini definitivi" (.github/workflows/definitivi.yml).
+const FIXED = [];
+const fixedIds = () => new Set(FIXED.map((m) => m.id));
+
+async function loadFixed() {
+  try {
+    const res = await fetch('img/manichino/collezione.json', { cache: 'no-cache' });
+    if (!res.ok) return;
+    const list = await res.json();
+    FIXED.splice(0, FIXED.length, ...list.filter((m) => m && m.id).map((m) => ({
+      ...m,
+      fixed: true,
+      base: `img/manichino/collezione/${m.id}.jpg`,
+      zone: `img/manichino/collezione/${m.id}-zone.png`,
+    })));
+  } catch { /* offline senza copia: restano quelli di prima */ }
+}
+
+// Quanti manichini fissi ha l'app per uomo e per donna (gli 11 + 8 di partenza più quelli resi definitivi).
+export function fixedCount(gender) {
+  return (gender === 'donna' ? 8 : 11) + FIXED.filter((m) => m.gender === gender).length;
+}
+
 async function refresh() {
   let mine = []; let shared = [];
   try { mine = (await db.getKV(KEY)) || []; } catch { /* niente */ }
   try { shared = (await db.getKV(SHARED)) || []; } catch { /* niente */ }
+  // Un manichino diventato definitivo esce dai tuoi e da quelli per tutti: ora è dell'app.
+  const fixed = fixedIds();
+  if (mine.some((m) => fixed.has(m.id))) {
+    mine = mine.filter((m) => !fixed.has(m.id));
+    try { await db.setKV(KEY, mine); } catch { /* niente */ }
+  }
+  shared = shared.filter((m) => !fixed.has(m.id));
   const ids = new Set(mine.map((m) => m.id));
-  setCustomMannequins([...mine, ...shared.filter((m) => !ids.has(m.id)).map((m) => ({ ...m, shared: true }))]);
+  const sharedOk = shared.filter((m) => !ids.has(m.id));
+  for (const m of sharedOk) ids.add(m.id);
+  setCustomMannequins([...mine, ...sharedOk.map((m) => ({ ...m, shared: true })), ...FIXED.filter((m) => !ids.has(m.id))]);
   return mine;
 }
 
 export async function loadCustom() {
+  await loadFixed();
   const mine = await refresh();
   syncShared().catch((e) => console.warn('manichini pubblici', e));
   return mine;
@@ -65,7 +100,14 @@ export function syncShared() {
       if (!cfg) return false;
       const res = await fetch(`${cfg.url}/rest/v1/manichini?select=id,data,modified`, { headers: { apikey: cfg.key, Authorization: `Bearer ${cfg.key}` } });
       if (!res.ok) throw new Error(`catalogo ${res.status}`);
-      const rows = await res.json();
+      let rows = await res.json();
+      // Quelli già entrati nel codice dell'app: l'amministratore li toglie dal catalogo.
+      const fixed = fixedIds();
+      const done = rows.filter((r) => fixed.has(r.id)).map((r) => r.id);
+      if (done.length) {
+        rows = rows.filter((r) => !fixed.has(r.id));
+        cleanupFixed(done).catch((e) => console.warn('manichini definitivi', e));
+      }
       const have = (await db.getKV(SHARED)) || [];
       const next = [];
       let changed = rows.length !== have.length;
@@ -110,7 +152,8 @@ export async function isAdmin() {
 const META = ['name', 'gender', 'occasions', 'garments', 'main', 'createdAt'];
 
 // Pubblica (o aggiorna) un tuo manichino per tutti gli utenti.
-export async function publishShared(m) {
+// extra.definitivo = true lo segna perché l'azione GitHub lo metta nel codice dell'app.
+export async function publishShared(m, extra = {}) {
   const sync = await import('./sync.js');
   const sb = await sync.client();
   const up = async (name, blob, type) => {
@@ -119,13 +162,29 @@ export async function publishShared(m) {
   };
   await up(`${m.id}-base.jpg`, m.base, 'image/jpeg');
   await up(`${m.id}-zone.png`, m.zone, 'image/png');
-  const data = Object.fromEntries(META.map((k) => [k, m[k] ?? null]));
+  const data = { ...Object.fromEntries(META.map((k) => [k, m[k] ?? null])), ...extra };
   const { error } = await sb.from('manichini').upsert({ id: m.id, data, modified: new Date().toISOString() });
   if (error) throw error;
   const list = (await db.getKV(KEY)) || [];
   const it = list.find((x) => x.id === m.id);
-  if (it) { it.published = true; await db.setKV(KEY, list); }
+  if (it) { Object.assign(it, { published: true }, extra); await db.setKV(KEY, list); }
   await refresh();
+}
+
+// Rende definitivo un tuo manichino: lo pubblica segnato "definitivo"; entro un'ora circa
+// l'azione GitHub lo copia nel codice dell'app e poi l'app lo toglie dai tuoi e dal catalogo.
+export function makeDefinitive(m) {
+  return publishShared(m, { definitivo: true });
+}
+
+// Toglie dal catalogo su Supabase i manichini ormai nel codice (solo l'amministratore può).
+async function cleanupFixed(ids) {
+  if (!(await isAdmin())) return;
+  const sync = await import('./sync.js');
+  const sb = await sync.client();
+  const { error } = await sb.from('manichini').delete().in('id', ids);
+  if (error) throw error;
+  await sb.storage.from('manichini').remove(ids.flatMap((id) => [`${id}-base.jpg`, `${id}-zone.png`]));
 }
 
 // Toglie un manichino dal catalogo pubblico (resta tra i tuoi).
