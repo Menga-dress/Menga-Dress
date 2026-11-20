@@ -12,7 +12,7 @@ import {
   mannequinMatch, currentGender, CUSTOM, ZONE_CATEGORIES, zoneOfCategory,
 } from './catalog.js';
 
-const APP_VERSION = '46'; // da aumentare a ogni modifica, si vede nelle Impostazioni
+const APP_VERSION = '47'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
 
@@ -27,10 +27,6 @@ const itemSection = (it) => it.per || fixedSection() || 'entrambi';
 const inSection = (it) => { const s = itemSection(it); return s === 'entrambi' || s === currentGender(); };
 async function loadProfileGender() {
   profileGender = (await db.getKV('profile').catch(() => null))?.gender || '';
-  // Con un solo stile nel profilo la sezione aperta è sempre quella.
-  const f = fixedSection();
-  if (f && currentGender() !== f) applyTheme(f);
-  else updateThemeBtn();
   return profileGender;
 }
 // Solo i capi della sezione aperta (maschile o femminile).
@@ -1586,10 +1582,8 @@ async function renderProfile() {
     onChange: (v) => {
       gender = v;
       profileGender = v;
-      // Il manichino segue il profilo (si cambia anche col tasto ♂/♀ in alto).
-      if ((v === 'uomo' || v === 'donna') && currentGender() !== v) {
-        db.setKV('profile', collect()).then(() => setTheme(v));
-      } else db.setKV('profile', collect()).then(route); // ridisegna con la sezione giusta
+      // Decide solo dove vanno i capi: tema e manichino si cambiano col tasto ♂/♀ in alto.
+      db.setKV('profile', collect()).then(route);
     },
   });
   const styles = chipGroup(STYLES, p.styles, { multiple: true, onChange: save });
@@ -1640,10 +1634,10 @@ async function renderProfile() {
         h('p', { class: 'hint' }, 'Più lo completi, più gli outfit e i link per comprare sono su misura per te. Si salva da solo.'))),
     section('Il tuo stile di abiti', 'Che vestiti porti? Non conta chi sei, solo i capi che ti piace indossare.', genderChips,
       h('p', { class: 'hint' }, {
-        uomo: 'I capi che carichi stanno nella sezione maschile, con i manichini maschili.',
-        donna: 'I capi che carichi stanno nella sezione femminile, con i manichini femminili.',
-        entrambi: 'Passi da una sezione all\'altra col tasto ♂/♀ in alto. Ogni capo può stare in una sezione o in entrambe: lo scegli nella sua scheda.',
-      }[gender] || 'Scegli per vedere solo i capi e i manichini adatti.')),
+        uomo: 'I capi che carichi si vedono e si usano solo nella sezione maschile (tasto ♂/♀ in alto).',
+        donna: 'I capi che carichi si vedono e si usano solo nella sezione femminile (tasto ♂/♀ in alto).',
+        entrambi: 'Ogni capo può stare in una sezione o in entrambe: lo scegli nella sua scheda.',
+      }[gender] || 'Decide in quale sezione finiscono i capi che carichi.')),
     section('Taglie', 'Servono per cercare online i capi nella tua taglia.',
       field('Parte sopra', f.topSize), sizeChips(f.topSize, ['XS', 'S', 'M', 'L', 'XL', 'XXL']),
       field('Parte sotto', f.bottomSize),
@@ -1683,8 +1677,6 @@ function updateThemeBtn() {
   const donna = document.documentElement.dataset.theme === 'donna';
   themeBtn.setAttribute('aria-label', donna ? 'Passa alla sezione maschile (tema scuro)' : 'Passa alla sezione femminile (tema chiaro)');
   themeBtn.title = donna ? 'Femminile · chiaro' : 'Maschile · scuro';
-  // Con un solo stile nel profilo la sezione è una sola: il tasto non serve.
-  themeBtn.hidden = !!fixedSection();
 }
 updateThemeBtn();
 themeBtn.addEventListener('click', () => {
@@ -1735,9 +1727,7 @@ async function openSettings() {
       h('h2', {}, 'Manichini'),
       mannequinSection(),
       h('h2', {}, 'Tema e manichino'),
-      fixedSection()
-        ? h('p', { class: 'hint' }, `Segue il tuo profilo: ${SECTION_LABELS[fixedSection()].toLowerCase()}. Per usare entrambe le sezioni scegli "Entrambi" nel Profilo.`)
-        : chipGroup(THEMES, document.documentElement.dataset.theme || 'uomo', { onChange: setTheme }),
+      chipGroup(THEMES, document.documentElement.dataset.theme || 'uomo', { onChange: setTheme }),
       h('h2', {}, 'Guida'),
       h('button', { class: 'btn block', type: 'button', onclick: () => { close(); welcome(true); } }, 'Rivedi la guida'),
       h('p', { class: 'hint' }, `Versione ${APP_VERSION}`),
