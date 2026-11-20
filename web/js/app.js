@@ -12,7 +12,7 @@ import {
   mannequinMatch, currentGender, CUSTOM, ZONE_CATEGORIES, zoneOfCategory,
 } from './catalog.js';
 
-const APP_VERSION = '50'; // da aumentare a ogni modifica, si vede nelle Impostazioni
+const APP_VERSION = '51'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
 
@@ -1149,7 +1149,36 @@ async function renderOutfit() {
   };
 
   const resultsBox = h('div');
+  const extrasBox = h('div');
   const go = h('button', { class: 'btn primary block', type: 'button' }, 'Altre proposte');
+  const more = h('button', { class: 'btn block more-ideas', type: 'button' }, '✨ 2 proposte fuori dal tuo armadio');
+  // In fondo, a richiesta: 2 outfit con un capo che non hai o con i capi che ti mancano.
+  more.addEventListener('click', async () => {
+    more.disabled = true;
+    try {
+      const [profile, history] = await Promise.all([db.getKV('profile'), db.getAll('outfits')]);
+      const args = {
+        items, profile: sectionProfile(profile), history,
+        mood: outfitState.mood, occasion: outfitState.occasion, dressCode: outfitState.dressCode,
+        weather: outfitState.weather,
+      };
+      const extra = suggestOutfits({ ...args, fresh: true, count: 2 });
+      if (extra.length < 2) {
+        const taken = new Set(extra.map((o) => o.item_ids.join('|')));
+        extra.push(...suggestOutfits({ ...args, count: 6 })
+          .filter((o) => o.ideas.length && !taken.has(o.item_ids.join('|'))).slice(0, 2 - extra.length)
+          .map((o) => ({ ...o, outside: true })));
+      }
+      outfitState.extras = extra;
+      paintResults(extrasBox, items, extra);
+      more.textContent = '✨ Altre 2 proposte fuori armadio';
+      extrasBox.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (e) {
+      extrasBox.replaceChildren(h('p', { class: 'error' }, e.message));
+    } finally {
+      more.disabled = false;
+    }
+  });
   const propose = async ({ scroll = true } = {}) => {
     go.disabled = true;
     try {
@@ -1160,9 +1189,11 @@ async function renderOutfit() {
         mood: outfitState.mood, occasion: outfitState.occasion, dressCode: outfitState.dressCode,
         weather: outfitState.weather,
       };
-      outfitState.results = suggestOutfits(args);
-      // In più, un'idea con un capo che non hai, abbinato ai tuoi.
-      if (items.length >= 2) outfitState.results.push(...suggestOutfits({ ...args, fresh: true, count: 1 }));
+      // Le 3 proposte usano solo i tuoi capi (con l'armadio vuoto, capi da prendere).
+      outfitState.results = suggestOutfits({ ...args, ownOnly: items.length > 0 });
+      outfitState.extras = null;
+      extrasBox.replaceChildren();
+      more.textContent = '✨ 2 proposte fuori dal tuo armadio';
       outfitState.noWeather = !outfitState.weather;
       outfitState.profile = sectionProfile(profile);
       paintResults(resultsBox, items);
@@ -1226,25 +1257,31 @@ async function renderOutfit() {
       ? 'Hai ancora pochi capi: dove manca qualcosa ti propongo io cosa prendere.'
       : 'L\'armadio è vuoto: intanto ti propongo outfit completi con capi da prendere. Più capi aggiungi, più le proposte useranno i tuoi.') : null,
     filters,
-    resultsBox,
     go,
+    h('div', { class: 'spacer' }),
+    resultsBox,
+    items.length ? extrasBox : null,
+    items.length ? more : null,
   ].filter(Boolean));
 
   paintWeather();
   if (!outfitState.weather) loadWeather();
   // Le proposte arrivano subito, senza dover toccare niente.
-  if (outfitState.results) paintResults(resultsBox, items);
+  if (outfitState.results) {
+    paintResults(resultsBox, items);
+    if (outfitState.extras) paintResults(extrasBox, items, outfitState.extras);
+  }
   else await propose({ scroll: false });
 }
 
-function paintResults(box, items) {
+function paintResults(box, items, list = outfitState.results) {
   const byId = Object.fromEntries(items.map((i) => [i.id, i]));
   box.replaceChildren();
-  if (!outfitState.results?.length) {
+  if (!list?.length) {
     box.append(h('p', { class: 'error' }, 'Nessuna proposta valida, riprova.'));
     return;
   }
-  for (const o of outfitState.results) {
+  for (const o of list) {
     const record = {
       id: o.savedId || db.newId(),
       date: new Date().toISOString(),
@@ -1285,8 +1322,8 @@ function paintResults(box, items) {
       toast('Buona giornata!');
     });
 
-    box.append(h('div', { class: o.fresh ? 'card outfit fresh' : 'card outfit' },
-      o.fresh ? h('p', { class: 'fresh-tag' }, '✨ Fuori dal tuo armadio') : null,
+    box.append(h('div', { class: o.fresh || o.outside ? 'card outfit fresh' : 'card outfit' },
+      o.fresh || o.outside ? h('p', { class: 'fresh-tag' }, '✨ Fuori dal tuo armadio') : null,
       h('h3', {}, o.title),
       dressCodeBadge(o),
       h('p', {}, o.reason),
@@ -1306,7 +1343,7 @@ function paintResults(box, items) {
         ...o.ideas.flatMap((it, i) => [i ? ', ' : null,
           h('a', { href: shopLink(it), target: '_blank', rel: 'noopener' }, ideaName(it))].filter(Boolean)),
         h('span', {}, ' (tocca per cercarlo online)')) : null,
-      h('div', { class: 'row' }, up, down, h('span', { style: 'flex:1' }), o.fresh || o.ideas.length === o.pieces.length ? null : wear)));
+      h('div', { class: 'row' }, up, down, h('span', { style: 'flex:1' }), o.fresh || o.outside || o.ideas.length === o.pieces.length ? null : wear)));
   }
 }
 
