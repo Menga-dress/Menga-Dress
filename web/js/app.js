@@ -12,9 +12,34 @@ import {
   mannequinMatch, currentGender, CUSTOM, ZONE_CATEGORIES, zoneOfCategory,
 } from './catalog.js';
 
-const APP_VERSION = '45'; // da aumentare a ogni modifica, si vede nelle Impostazioni
+const APP_VERSION = '46'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
+
+// ---------- sezioni dei capi (stile maschile, femminile o entrambi) ----------
+
+// Dal profilo: 'uomo' o 'donna' tengono i capi in una sola sezione, 'entrambi' (o vuoto) li lascia scegliere.
+let profileGender = '';
+const SECTION_LABELS = { uomo: 'Stile maschile', donna: 'Stile femminile', entrambi: 'Entrambi' };
+const fixedSection = () => (profileGender === 'uomo' || profileGender === 'donna' ? profileGender : '');
+// I capi caricati prima di questa scelta seguono il profilo.
+const itemSection = (it) => it.per || fixedSection() || 'entrambi';
+const inSection = (it) => { const s = itemSection(it); return s === 'entrambi' || s === currentGender(); };
+async function loadProfileGender() {
+  profileGender = (await db.getKV('profile').catch(() => null))?.gender || '';
+  // Con un solo stile nel profilo la sezione aperta è sempre quella.
+  const f = fixedSection();
+  if (f && currentGender() !== f) applyTheme(f);
+  else updateThemeBtn();
+  return profileGender;
+}
+// Solo i capi della sezione aperta (maschile o femminile).
+async function sectionItems() {
+  const [all] = await Promise.all([db.getAll('items'), loadProfileGender()]);
+  return all.filter(inSection);
+}
+// Proposte e link per comprare seguono la sezione aperta.
+const sectionProfile = (profile) => ({ ...(profile || {}), gender: currentGender() });
 
 // ---------- utilità ----------
 
@@ -557,7 +582,7 @@ function wardrobeRow(it) {
 
 async function renderWardrobe() {
   titleEl.textContent = 'Il mio armadio';
-  const items = (await db.getAll('items')).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+  const items = (await sectionItems()).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
   view.replaceChildren();
 
   if (!items.length) {
@@ -678,6 +703,7 @@ async function addItemFromFile(file) {
     category: '', subcategory: '', colors: [], pattern: 'solid', material: '',
     seasons: [], formality: 3, styles: [], brand: '', size: '', notes: '',
     timesWorn: 0, lastWorn: null,
+    per: fixedSection() || 'entrambi',
   };
   editItem(item, { isNew: true });
 }
@@ -702,6 +728,10 @@ function editItem(item, { isNew = false } = {}) {
       notes: h('textarea', {}, item.notes || ''),
     };
     let category = item.category;
+    let per = itemSection(item);
+    const perChips = fixedSection() ? null : chipGroup({ uomo: 'Stile maschile', donna: 'Stile femminile', entrambi: 'Entrambi' }, per, {
+      onChange: (v) => { per = v; },
+    });
     let lastEmb = null; // impronta della foto, per ricordare il tipo scelto
     let lastEmbImage = null;
     let seasons = chipGroup(SEASONS, item.seasons, { multiple: true });
@@ -944,6 +974,7 @@ function editItem(item, { isNew = false } = {}) {
         notes: f.notes.value.trim(),
         image: item.image,
         cutout: !!item.cutout,
+        per,
         updatedAt: new Date().toISOString(),
       };
       await db.put('items', updated);
@@ -985,6 +1016,8 @@ function editItem(item, { isNew = false } = {}) {
       field('Formalità', f.formality),
       h('div', { class: 'field' }, h('span', {}, 'Stagioni'), seasonsSlot),
       h('div', { class: 'field' }, h('span', {}, 'Stili'), stylesSlot),
+      perChips ? h('div', { class: 'field' }, h('span', {}, 'Si vede nella sezione'), perChips,
+        h('small', { class: 'hint' }, 'Con "Entrambi" lo stesso capo si usa sia coi manichini maschili sia con quelli femminili.')) : null,
       h('div', { class: 'two' }, field('Marca', f.brand), field('Taglia', f.size)),
       field('Note', f.notes),
       h('div', { class: 'row end' },
@@ -1011,7 +1044,7 @@ const outfitState = { mood: 'rilassato', occasion: 'tempo_libero', weather: null
 async function renderOutfit() {
   titleEl.textContent = 'Outfit del giorno';
   view.replaceChildren();
-  const items = await db.getAll('items');
+  const items = await sectionItems();
 
   const fewItems = items.length < 4;
 
@@ -1048,11 +1081,11 @@ async function renderOutfit() {
       const [profile, history] = await Promise.all([db.getKV('profile'), db.getAll('outfits')]);
       history.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
       outfitState.results = suggestOutfits({
-        items, profile, history,
+        items, profile: sectionProfile(profile), history,
         mood: outfitState.mood, occasion: outfitState.occasion,
         weather: outfitState.weather,
       });
-      outfitState.profile = profile;
+      outfitState.profile = sectionProfile(profile);
       paintResults(resultsBox, items);
       go.textContent = 'Altre proposte';
       resultsBox.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1205,7 +1238,8 @@ async function renderDiary() {
   if (!diaryState.tab) {
     try { diaryState.tab = localStorage.getItem('menga-diario') || 'calendario'; } catch { diaryState.tab = 'calendario'; }
   }
-  const [items, outfits] = await Promise.all([db.getAll('items'), db.getAll('outfits')]);
+  // Il calendario mostra tutti gli outfit passati; statistiche e proposte guardano la sezione aperta.
+  const [items, outfits] = await Promise.all([db.getAll('items'), db.getAll('outfits'), loadProfileGender()]);
   const body = h('div');
   const tabs = chipGroup({ calendario: 'Calendario', statistiche: 'Statistiche' }, diaryState.tab, {
     onChange: (v) => {
@@ -1214,7 +1248,7 @@ async function renderDiary() {
       paint();
     },
   });
-  const paint = () => body.replaceChildren(diaryState.tab === 'statistiche' ? statsView(items, outfits) : calendarView(items, outfits));
+  const paint = () => body.replaceChildren(diaryState.tab === 'statistiche' ? statsView(items.filter(inSection), outfits) : calendarView(items, outfits));
   view.append(tabs, body);
   paint();
 }
@@ -1362,7 +1396,7 @@ function planDay(k, fc, items) {
     const results = h('div');
     const go = async () => {
       const [profile, history] = await Promise.all([db.getKV('profile'), db.getAll('outfits')]);
-      const list = suggestOutfits({ items, profile, history, mood, occasion, weather: fc || null });
+      const list = suggestOutfits({ items: items.filter(inSection), profile: sectionProfile(profile), history, mood, occasion, weather: fc || null });
       results.replaceChildren(...list.map((o) => {
         const pieces = o.pieces;
         const usable = o.ideas.length < o.pieces.length;
@@ -1407,7 +1441,7 @@ const daysAgo = (iso) => (iso ? Math.floor((Date.now() - new Date(iso).getTime()
 // Cosa manca all'armadio per vestirsi bene in ogni occasione e stagione.
 function wardrobeGaps(items, profile) {
   const has = (cat, names) => items.some((it) => it.category === cat && (!names || names.includes(it.subcategory)));
-  const donna = (profile?.gender || currentGender()) === 'donna';
+  const donna = currentGender() === 'donna';
   const gaps = [];
   const add = (cond, text, idea) => { if (cond) gaps.push({ text, idea }); };
   add(!has('top'), 'Nessuna maglia o camicia.', { category: 'top', subcategory: 'T-shirt', colors: ['bianco'] });
@@ -1458,9 +1492,9 @@ function statsView(items, outfits) {
 
   const gapsBox = h('div', { class: 'gaps' });
   db.getKV('profile').then((profile) => {
-    const gaps = wardrobeGaps(items, profile);
+    const gaps = wardrobeGaps(items, sectionProfile(profile));
     gapsBox.replaceChildren(gaps.length
-      ? h('ul', {}, gaps.map((g) => h('li', {}, g.text, ' ', h('a', { href: gapLink(g.idea, profile), target: '_blank', rel: 'noopener' }, `Cerca ${g.idea.subcategory.toLowerCase()} ${g.idea.colors[0]}`))))
+      ? h('ul', {}, gaps.map((g) => h('li', {}, g.text, ' ', h('a', { href: gapLink(g.idea, sectionProfile(profile)), target: '_blank', rel: 'noopener' }, `Cerca ${g.idea.subcategory.toLowerCase()} ${g.idea.colors[0]}`))))
       : h('p', { class: 'hint' }, 'Hai tutto il necessario per ogni occasione. 👌'));
   });
 
@@ -1494,7 +1528,7 @@ function statsView(items, outfits) {
 async function renderProfile() {
   titleEl.textContent = 'Profilo';
   const p = (await db.getKV('profile')) || {};
-  const items = await db.getAll('items');
+  const items = await sectionItems();
   const outfits = await db.getAll('outfits').catch(() => []);
   view.replaceChildren();
 
@@ -1548,13 +1582,14 @@ async function renderProfile() {
   };
   for (const el of Object.values(f)) el.addEventListener('input', save);
 
-  const genderChips = chipGroup({ uomo: 'Uomo', donna: 'Donna', entrambi: 'Entrambi' }, gender, {
+  const genderChips = chipGroup(SECTION_LABELS, gender, {
     onChange: (v) => {
       gender = v;
+      profileGender = v;
       // Il manichino segue il profilo (si cambia anche col tasto ♂/♀ in alto).
       if ((v === 'uomo' || v === 'donna') && currentGender() !== v) {
         db.setKV('profile', collect()).then(() => setTheme(v));
-      } else save();
+      } else db.setKV('profile', collect()).then(route); // ridisegna con la sezione giusta
     },
   });
   const styles = chipGroup(STYLES, p.styles, { multiple: true, onChange: save });
@@ -1603,7 +1638,12 @@ async function renderProfile() {
         h('div', { class: 'row' }, h('span', {}, 'Profilo completo al ', pct), status),
         h('div', { class: 'meter' }, bar),
         h('p', { class: 'hint' }, 'Più lo completi, più gli outfit e i link per comprare sono su misura per te. Si salva da solo.'))),
-    section('Chi sei', 'Sceglie i capi proposti e il manichino.', genderChips),
+    section('Il tuo stile di abiti', 'Che vestiti porti? Non conta chi sei, solo i capi che ti piace indossare.', genderChips,
+      h('p', { class: 'hint' }, {
+        uomo: 'I capi che carichi stanno nella sezione maschile, con i manichini maschili.',
+        donna: 'I capi che carichi stanno nella sezione femminile, con i manichini femminili.',
+        entrambi: 'Passi da una sezione all\'altra col tasto ♂/♀ in alto. Ogni capo può stare in una sezione o in entrambe: lo scegli nella sua scheda.',
+      }[gender] || 'Scegli per vedere solo i capi e i manichini adatti.')),
     section('Taglie', 'Servono per cercare online i capi nella tua taglia.',
       field('Parte sopra', f.topSize), sizeChips(f.topSize, ['XS', 'S', 'M', 'L', 'XL', 'XXL']),
       field('Parte sotto', f.bottomSize),
@@ -1623,13 +1663,17 @@ async function renderProfile() {
 
 // ---------- Impostazioni ----------
 
-const THEMES = { uomo: 'Uomo · scuro', donna: 'Donna · chiaro' };
+const THEMES = { uomo: 'Maschile · scuro', donna: 'Femminile · chiaro' };
 
-function setTheme(t) {
+function applyTheme(t) {
   document.documentElement.dataset.theme = t;
   document.querySelector('meta[name="theme-color"]').content = t === 'donna' ? '#e6d5b8' : '#1f1d1a';
   try { localStorage.setItem('menga-tema', t); } catch (e) { /* resta per questa sessione */ }
   updateThemeBtn();
+}
+
+function setTheme(t) {
+  applyTheme(t);
   route(); // ridisegna l'anteprima con il manichino giusto
 }
 
@@ -1637,14 +1681,16 @@ function setTheme(t) {
 const themeBtn = document.getElementById('theme-btn');
 function updateThemeBtn() {
   const donna = document.documentElement.dataset.theme === 'donna';
-  themeBtn.setAttribute('aria-label', donna ? 'Passa al manichino uomo (tema scuro)' : 'Passa al manichino donna (tema chiaro)');
-  themeBtn.title = donna ? 'Donna · chiaro' : 'Uomo · scuro';
+  themeBtn.setAttribute('aria-label', donna ? 'Passa alla sezione maschile (tema scuro)' : 'Passa alla sezione femminile (tema chiaro)');
+  themeBtn.title = donna ? 'Femminile · chiaro' : 'Maschile · scuro';
+  // Con un solo stile nel profilo la sezione è una sola: il tasto non serve.
+  themeBtn.hidden = !!fixedSection();
 }
 updateThemeBtn();
 themeBtn.addEventListener('click', () => {
   const t = document.documentElement.dataset.theme === 'donna' ? 'uomo' : 'donna';
   setTheme(t);
-  toast(t === 'donna' ? 'Manichino donna' : 'Manichino uomo');
+  toast(t === 'donna' ? 'Sezione femminile' : 'Sezione maschile');
 });
 
 async function openSettings() {
@@ -1689,7 +1735,9 @@ async function openSettings() {
       h('h2', {}, 'Manichini'),
       mannequinSection(),
       h('h2', {}, 'Tema e manichino'),
-      chipGroup(THEMES, document.documentElement.dataset.theme || 'uomo', { onChange: setTheme }),
+      fixedSection()
+        ? h('p', { class: 'hint' }, `Segue il tuo profilo: ${SECTION_LABELS[fixedSection()].toLowerCase()}. Per usare entrambe le sezioni scegli "Entrambi" nel Profilo.`)
+        : chipGroup(THEMES, document.documentElement.dataset.theme || 'uomo', { onChange: setTheme }),
       h('h2', {}, 'Guida'),
       h('button', { class: 'btn block', type: 'button', onclick: () => { close(); welcome(true); } }, 'Rivedi la guida'),
       h('p', { class: 'hint' }, `Versione ${APP_VERSION}`),
