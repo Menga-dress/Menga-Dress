@@ -1,5 +1,5 @@
 import * as db from './db.js';
-import { getWeather, getForecast } from './weather.js';
+import { getWeather, getForecast, savedCity, setCity, forgetCity } from './weather.js';
 import { detectColors } from './colors.js';
 import { suggestOutfits, ideaName, DRESS_CODES, readInvite } from './stylist.js';
 import { lookView, garmentView, previewPhoto, forgetPhoto } from './look.js';
@@ -12,7 +12,7 @@ import {
   mannequinMatch, currentGender, CUSTOM, ZONE_CATEGORIES, zoneOfCategory,
 } from './catalog.js';
 
-const APP_VERSION = '49'; // da aumentare a ogni modifica, si vede nelle Impostazioni
+const APP_VERSION = '50'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
 
@@ -1044,6 +1044,12 @@ function editItem(item, { isNew = false } = {}) {
 // ---------- Outfit del giorno ----------
 
 const outfitState = { mood: 'rilassato', occasion: 'tempo_libero', dressCode: 'libero', weather: null, weatherError: null, results: null };
+// Umore, occasione e dress code dell'ultima volta: la pagina Outfit riparte da lì.
+try { Object.assign(outfitState, JSON.parse(localStorage.getItem('menga-outfit-scelte') || '{}')); } catch { /* niente */ }
+function rememberChoices() {
+  const { mood, occasion, dressCode } = outfitState;
+  try { localStorage.setItem('menga-outfit-scelte', JSON.stringify({ mood, occasion, dressCode })); } catch { /* niente */ }
+}
 
 // Riga "Dress code" con la spiegazione delle regole sotto. get/set leggono e scrivono la scelta.
 function dressCodePicker(get, set, { onInvite } = {}) {
@@ -1097,13 +1103,34 @@ async function renderOutfit() {
   const fewItems = items.length < 4;
 
   const weatherBox = h('div', { class: 'card weather' });
+  const cityForm = (label) => {
+    const input = h('input', { type: 'text', placeholder: 'es. Milano', value: savedCity()?.name || '', 'aria-label': 'Città', enterkeyhint: 'search' });
+    const save = async () => {
+      if (!input.value.trim()) return;
+      ok.disabled = true;
+      try {
+        await setCity(input.value);
+        outfitState.weather = null;
+        loadWeather();
+      } catch (e) {
+        toast(e.message);
+        ok.disabled = false;
+      }
+    };
+    const ok = h('button', { class: 'btn', type: 'button', onclick: save }, 'Usa');
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') save(); });
+    return h('div', { class: 'city-form' }, h('span', { class: 'hint' }, label), h('div', { class: 'row city-row' }, input, ok));
+  };
   const paintWeather = () => {
     const w = outfitState.weather;
+    weatherBox.classList.toggle('weather-ask', !w && Boolean(outfitState.weatherError));
     if (w) {
-      weatherBox.replaceChildren(h('b', {}, `${w.now}°`), h('span', {}, `${w.sky} · ${w.min}°/${w.max}° · prob. pioggia ${w.rain}%`));
+      const change = h('button', { class: 'link-btn', type: 'button', onclick: () => weatherBox.replaceChildren(cityForm('Scrivi la città per il meteo:'),
+        savedCity() ? h('button', { class: 'link-btn', type: 'button', onclick: () => { forgetCity(); outfitState.weather = null; loadWeather(); } }, 'Usa la posizione del telefono') : null) },
+      w.place || 'Cambia città');
+      weatherBox.replaceChildren(h('b', {}, `${w.now}°`), h('span', { class: 'weather-txt' }, `${w.sky} · ${w.min}°/${w.max}° · pioggia ${w.rain}%`), change);
     } else if (outfitState.weatherError) {
-      weatherBox.replaceChildren(h('span', {}, `Meteo non disponibile (${outfitState.weatherError}).`),
-        h('button', { class: 'btn', type: 'button', onclick: loadWeather }, 'Riprova'));
+      weatherBox.replaceChildren(cityForm(`Non ho la posizione (${outfitState.weatherError.toLowerCase()}). Scrivi la tua città e uso il suo meteo:`));
     } else {
       weatherBox.replaceChildren(h('span', { class: 'spinner' }), h('span', {}, 'Leggo il meteo…'));
     }
@@ -1113,36 +1140,40 @@ async function renderOutfit() {
     paintWeather();
     try {
       outfitState.weather = await getWeather();
+      // Le proposte fatte senza meteo si rifanno col meteo vero.
+      if (outfitState.results && outfitState.noWeather && view.contains(resultsBox)) propose({ scroll: false });
     } catch (e) {
       outfitState.weatherError = e.message;
     }
     paintWeather();
   };
-  paintWeather();
-  if (!outfitState.weather) loadWeather();
 
   const resultsBox = h('div');
-  const go = h('button', { class: 'btn primary block', type: 'button' }, 'Proponimi 3 outfit');
-  go.addEventListener('click', async () => {
+  const go = h('button', { class: 'btn primary block', type: 'button' }, 'Altre proposte');
+  const propose = async ({ scroll = true } = {}) => {
     go.disabled = true;
     try {
       const [profile, history] = await Promise.all([db.getKV('profile'), db.getAll('outfits')]);
       history.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-      outfitState.results = suggestOutfits({
+      const args = {
         items, profile: sectionProfile(profile), history,
         mood: outfitState.mood, occasion: outfitState.occasion, dressCode: outfitState.dressCode,
         weather: outfitState.weather,
-      });
+      };
+      outfitState.results = suggestOutfits(args);
+      // In più, un'idea con un capo che non hai, abbinato ai tuoi.
+      if (items.length >= 2) outfitState.results.push(...suggestOutfits({ ...args, fresh: true, count: 1 }));
+      outfitState.noWeather = !outfitState.weather;
       outfitState.profile = sectionProfile(profile);
       paintResults(resultsBox, items);
-      go.textContent = 'Altre proposte';
-      resultsBox.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (scroll) resultsBox.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (e) {
       resultsBox.replaceChildren(h('p', { class: 'error' }, e.message));
     } finally {
       go.disabled = false;
     }
-  });
+  };
+  go.addEventListener('click', () => propose());
 
   // Outfit pianificato per oggi dal Diario.
   const planned = (await db.getAll('outfits')).find((o) => o.planned === todayKey() && !o.worn);
@@ -1160,16 +1191,33 @@ async function renderOutfit() {
       h('div', { class: 'row end' }, h('a', { class: 'btn', href: '#/diario' }, 'Diario'), wearBtn));
   }
 
-  const occasionChips = () => chipGroup(OCCASIONS, outfitState.occasion, { onChange: (v) => { outfitState.occasion = v; } });
+  // Filtri chiusi in una riga: si vedono le scelte, si aprono a tocco e ogni cambio rifà le proposte.
+  const summaryText = h('span', { class: 'filters-now' });
+  const paintSummary = () => {
+    const dc = DRESS_CODES[outfitState.dressCode];
+    summaryText.textContent = [MOODS[outfitState.mood], OCCASIONS[outfitState.occasion],
+      dc && outfitState.dressCode !== 'libero' ? dc.label : null].filter(Boolean).join(' · ');
+  };
+  const changed = () => { rememberChoices(); paintSummary(); propose({ scroll: false }); };
+  const occasionChips = () => chipGroup(OCCASIONS, outfitState.occasion, { onChange: (v) => { outfitState.occasion = v; changed(); } });
   const occasionSlot = h('div', {}, occasionChips());
-  const dcPicker = dressCodePicker(() => outfitState.dressCode, (v) => { outfitState.dressCode = v; }, {
+  const dcPicker = dressCodePicker(() => outfitState.dressCode, (v) => { outfitState.dressCode = v; changed(); }, {
     onInvite: (r) => {
       outfitState.dressCode = r.code;
       outfitState.occasion = r.occasion;
       occasionSlot.replaceChildren(occasionChips());
       dcPicker.refresh();
+      changed();
     },
   });
+  paintSummary();
+  const filters = h('details', { class: 'card filters' },
+    h('summary', {}, h('span', { class: 'filters-label' }, 'Umore e occasione'), summaryText),
+    h('h2', {}, 'Come ti senti oggi?'),
+    chipGroup(MOODS, outfitState.mood, { onChange: (v) => { outfitState.mood = v; changed(); } }),
+    h('h2', {}, 'Per cosa ti vesti?'),
+    occasionSlot,
+    ...dcPicker.nodes);
 
   view.append(...[
     weatherBox,
@@ -1177,20 +1225,16 @@ async function renderOutfit() {
     fewItems ? h('p', { class: 'hint' }, items.length
       ? 'Hai ancora pochi capi: dove manca qualcosa ti propongo io cosa prendere.'
       : 'L\'armadio è vuoto: intanto ti propongo outfit completi con capi da prendere. Più capi aggiungi, più le proposte useranno i tuoi.') : null,
-    h('h2', {}, 'Come ti senti oggi?'),
-    chipGroup(MOODS, outfitState.mood, { onChange: (v) => { outfitState.mood = v; } }),
-    h('h2', {}, 'Per cosa ti vesti?'),
-    occasionSlot,
-    ...dcPicker.nodes,
-    go,
-    h('div', { class: 'spacer' }),
+    filters,
     resultsBox,
+    go,
   ].filter(Boolean));
 
-  if (outfitState.results) {
-    paintResults(resultsBox, items);
-    go.textContent = 'Altre proposte';
-  }
+  paintWeather();
+  if (!outfitState.weather) loadWeather();
+  // Le proposte arrivano subito, senza dover toccare niente.
+  if (outfitState.results) paintResults(resultsBox, items);
+  else await propose({ scroll: false });
 }
 
 function paintResults(box, items) {
@@ -1241,7 +1285,8 @@ function paintResults(box, items) {
       toast('Buona giornata!');
     });
 
-    box.append(h('div', { class: 'card outfit' },
+    box.append(h('div', { class: o.fresh ? 'card outfit fresh' : 'card outfit' },
+      o.fresh ? h('p', { class: 'fresh-tag' }, '✨ Fuori dal tuo armadio') : null,
       h('h3', {}, o.title),
       dressCodeBadge(o),
       h('p', {}, o.reason),
@@ -1257,11 +1302,11 @@ function paintResults(box, items) {
         return h('figure', {}, h('img', { src: imgURL(it), alt: describeItem(it), class: it.cutout ? 'cut' : null }), h('figcaption', {}, it.subcategory || CATEGORIES[it.category]));
       })),
       o.ideas.length ? h('div', { class: 'missing' },
-        h('span', {}, o.ideas.length === o.pieces.length ? 'Capi da prendere: ' : 'Per completarlo ti manca: '),
+        h('span', {}, o.fresh ? 'Il capo nuovo: ' : o.ideas.length === o.pieces.length ? 'Capi da prendere: ' : 'Per completarlo ti manca: '),
         ...o.ideas.flatMap((it, i) => [i ? ', ' : null,
           h('a', { href: shopLink(it), target: '_blank', rel: 'noopener' }, ideaName(it))].filter(Boolean)),
         h('span', {}, ' (tocca per cercarlo online)')) : null,
-      h('div', { class: 'row' }, up, down, h('span', { style: 'flex:1' }), o.ideas.length === o.pieces.length ? null : wear)));
+      h('div', { class: 'row' }, up, down, h('span', { style: 'flex:1' }), o.fresh || o.ideas.length === o.pieces.length ? null : wear)));
   }
 }
 
@@ -1994,9 +2039,8 @@ async function initAccount() {
     const user = await sync.currentUser();
     if (user) {
       runSync({ quiet: true });
-    } else if (!localStorage.getItem('menga-skip-login') && !/type=recovery/.test(location.hash)) {
-      openLogin({ first: true });
     }
+    // Niente finestra di accesso all'avvio: l'account è facoltativo e sta nelle Impostazioni.
   } catch (e) {
     accountReady = false;
     console.warn('account', e); // offline o Supabase in pausa: l'app funziona lo stesso

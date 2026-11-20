@@ -203,6 +203,31 @@ textarea { min-height: 72px; resize: vertical; }
 
 .weather { display: flex; align-items: center; gap: 10px; font-size: 15px; }
 .weather b { font-size: 20px; }
+.weather .weather-txt { flex: 1; }
+.weather .link-btn { margin: 0; font-size: 14px; }
+.weather.weather-ask { display: block; }
+.city-form .hint { display: block; margin: 0 0 8px; }
+.city-row { flex-wrap: nowrap; }
+.city-row input { flex: 1; min-width: 0; }
+
+.filters { padding: 0; }
+.filters > summary {
+  list-style: none; cursor: pointer; display: flex; flex-direction: column; gap: 2px;
+  padding: 14px 44px 14px 16px; position: relative;
+}
+.filters > summary::-webkit-details-marker { display: none; }
+.filters > summary::after {
+  content: '▾'; position: absolute; right: 18px; top: 50%; transform: translateY(-50%);
+  color: var(--accent); font-size: 18px; transition: transform .2s;
+}
+.filters[open] > summary::after { transform: translateY(-50%) rotate(180deg); }
+.filters-label { font-size: 13px; color: var(--muted); }
+.filters-now { font-weight: 600; }
+.filters[open] { padding-bottom: 8px; }
+.filters[open] > :not(summary) { margin-left: 16px; margin-right: 16px; }
+
+.outfit.fresh { border-color: var(--accent); }
+.outfit .fresh-tag { color: var(--accent); font-weight: 600; font-size: 13px; margin: 0 0 4px; }
 
 .outfit h3 { margin: 0 0 4px; font-size: 17px; }
 .outfit p { margin: 0 0 12px; color: var(--muted); font-size: 14px; }

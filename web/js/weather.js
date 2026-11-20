@@ -16,7 +16,29 @@ function describe(code) {
   return hit ? hit[1] : 'variabile';
 }
 
-function position() {
+// Città scritta a mano: serve quando il telefono non dà la posizione.
+const CITY_KEY = 'menga-citta';
+export function savedCity() {
+  try { return JSON.parse(localStorage.getItem(CITY_KEY) || 'null'); } catch { return null; }
+}
+export function forgetCity() {
+  try { localStorage.removeItem(CITY_KEY); } catch { /* niente */ }
+}
+
+// Cerca la città con il servizio gratuito di Open-Meteo (senza chiave) e la ricorda.
+export async function setCity(name) {
+  const url = 'https://geocoding-api.open-meteo.com/v1/search'
+    + `?name=${encodeURIComponent(name.trim())}&count=1&language=it&format=json`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('Ricerca non riuscita, riprova');
+  const hit = (await res.json()).results?.[0];
+  if (!hit) throw new Error(`Non trovo "${name.trim()}"`);
+  const city = { name: hit.name, latitude: hit.latitude, longitude: hit.longitude };
+  try { localStorage.setItem(CITY_KEY, JSON.stringify(city)); } catch { /* niente */ }
+  return city;
+}
+
+function gps() {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) return reject(new Error('Posizione non disponibile'));
     navigator.geolocation.getCurrentPosition(
@@ -27,8 +49,20 @@ function position() {
   });
 }
 
+// Prima la città scelta da te (se c'è), altrimenti la posizione del telefono.
+async function position() {
+  const city = savedCity();
+  if (city) return city;
+  try {
+    return await gps();
+  } catch (e) {
+    e.needCity = true;
+    throw e;
+  }
+}
+
 export async function getWeather() {
-  const { latitude, longitude } = await position();
+  const { latitude, longitude, name } = await position();
   const url = 'https://api.open-meteo.com/v1/forecast'
     + `?latitude=${latitude.toFixed(3)}&longitude=${longitude.toFixed(3)}`
     + '&current=temperature_2m,weather_code'
@@ -43,7 +77,7 @@ export async function getWeather() {
   const rain = d.daily.precipitation_probability_max?.[0] ?? 0;
   const sky = describe(d.daily.weather_code[0]);
   return {
-    now, min, max, rain, sky,
+    now, min, max, rain, sky, place: name || null,
     summary: `${sky}, ora ${now}°C, minima ${min}°C, massima ${max}°C, probabilità di pioggia ${rain}%`,
   };
 }
