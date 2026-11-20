@@ -1,7 +1,7 @@
 import * as db from './db.js';
 import { getWeather, getForecast } from './weather.js';
 import { detectColors } from './colors.js';
-import { suggestOutfits, ideaName } from './stylist.js';
+import { suggestOutfits, ideaName, DRESS_CODES, readInvite } from './stylist.js';
 import { lookView, garmentView, previewPhoto, forgetPhoto } from './look.js';
 import { prepareMannequin, loadCustom, saveCustom, removeCustom, syncShared, isAdmin, publishShared, unpublishShared, makeDefinitive, fixedCount } from './manichini.js';
 import { analyzeGarment, isModelCached, rememberGarment, forgetGarment, learnFromWardrobe } from './riconosci.js';
@@ -12,7 +12,7 @@ import {
   mannequinMatch, currentGender, CUSTOM, ZONE_CATEGORIES, zoneOfCategory,
 } from './catalog.js';
 
-const APP_VERSION = '48'; // da aumentare a ogni modifica, si vede nelle Impostazioni
+const APP_VERSION = '49'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
 
@@ -1043,7 +1043,51 @@ function editItem(item, { isNew = false } = {}) {
 
 // ---------- Outfit del giorno ----------
 
-const outfitState = { mood: 'rilassato', occasion: 'tempo_libero', weather: null, weatherError: null, results: null };
+const outfitState = { mood: 'rilassato', occasion: 'tempo_libero', dressCode: 'libero', weather: null, weatherError: null, results: null };
+
+// Riga "Dress code" con la spiegazione delle regole sotto. get/set leggono e scrivono la scelta.
+function dressCodePicker(get, set, { onInvite } = {}) {
+  const note = h('p', { class: 'hint dc-note' });
+  const paintNote = () => {
+    const dc = DRESS_CODES[get()] || DRESS_CODES.libero;
+    note.replaceChildren(`${dc.icon} `, h('b', {}, dc.label), `: ${dc.text}`);
+  };
+  const labels = Object.fromEntries(Object.entries(DRESS_CODES).map(([k, v]) => [k, v.label]));
+  let chips = chipGroup(labels, get(), { onChange: (v) => { set(v); paintNote(); } });
+  const slot = h('div', {}, chips);
+  paintNote();
+  // Per aggiornare la riga da fuori (dopo aver letto un invito).
+  const refresh = () => {
+    chips = chipGroup(labels, get(), { onChange: (v) => { set(v); paintNote(); } });
+    slot.replaceChildren(chips);
+    paintNote();
+  };
+  const invite = onInvite ? h('button', { class: 'link-btn', type: 'button', onclick: () => openInvite(onInvite) }, '📩 Incolla un invito: lo leggo io') : null;
+  return { nodes: [h('h2', {}, 'Dress code'), slot, note, invite], refresh };
+}
+
+// Incolli il testo di un invito o di un messaggio: l'app trova il dress code e l'occasione.
+function openInvite(onFound) {
+  openDialog((close) => {
+    const area = h('textarea', { rows: 5, placeholder: 'es. "Vi aspettiamo al matrimonio di Anna e Marco, sabato alle 16. Dress code: cocktail"' });
+    const msg = h('p', { class: 'hint' });
+    const read = () => {
+      const r = readInvite(area.value);
+      if (!r) { msg.textContent = 'Non ho trovato un dress code in questo testo: sceglilo tu dalla lista.'; return; }
+      onFound(r);
+      close();
+      toast(`Dress code ${DRESS_CODES[r.code].label} (ho letto "${r.word}")`);
+    };
+    const paste = navigator.clipboard?.readText ? h('button', { class: 'btn', type: 'button', onclick: async () => {
+      try { area.value = await navigator.clipboard.readText(); } catch { toast('Incolla tu il testo nel riquadro.'); }
+    } }, 'Incolla') : null;
+    return h('div', { class: 'sheet' },
+      sheetHead('Leggi un invito', close),
+      h('p', { class: 'hint' }, 'Incolla il testo dell\'invito, della mail o del messaggio. Cerco parole come "cerimonia", "cocktail", "colloquio" o "smart casual" e scelgo il dress code. Non esce niente dal telefono.'),
+      area, msg,
+      h('div', { class: 'row end' }, paste, h('button', { class: 'btn primary', type: 'button', onclick: read }, 'Leggi')));
+  });
+}
 
 async function renderOutfit() {
   titleEl.textContent = 'Outfit del giorno';
@@ -1086,7 +1130,7 @@ async function renderOutfit() {
       history.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
       outfitState.results = suggestOutfits({
         items, profile: sectionProfile(profile), history,
-        mood: outfitState.mood, occasion: outfitState.occasion,
+        mood: outfitState.mood, occasion: outfitState.occasion, dressCode: outfitState.dressCode,
         weather: outfitState.weather,
       });
       outfitState.profile = sectionProfile(profile);
@@ -1116,6 +1160,17 @@ async function renderOutfit() {
       h('div', { class: 'row end' }, h('a', { class: 'btn', href: '#/diario' }, 'Diario'), wearBtn));
   }
 
+  const occasionChips = () => chipGroup(OCCASIONS, outfitState.occasion, { onChange: (v) => { outfitState.occasion = v; } });
+  const occasionSlot = h('div', {}, occasionChips());
+  const dcPicker = dressCodePicker(() => outfitState.dressCode, (v) => { outfitState.dressCode = v; }, {
+    onInvite: (r) => {
+      outfitState.dressCode = r.code;
+      outfitState.occasion = r.occasion;
+      occasionSlot.replaceChildren(occasionChips());
+      dcPicker.refresh();
+    },
+  });
+
   view.append(...[
     weatherBox,
     plannedCard,
@@ -1125,7 +1180,8 @@ async function renderOutfit() {
     h('h2', {}, 'Come ti senti oggi?'),
     chipGroup(MOODS, outfitState.mood, { onChange: (v) => { outfitState.mood = v; } }),
     h('h2', {}, 'Per cosa ti vesti?'),
-    chipGroup(OCCASIONS, outfitState.occasion, { onChange: (v) => { outfitState.occasion = v; } }),
+    occasionSlot,
+    ...dcPicker.nodes,
     go,
     h('div', { class: 'spacer' }),
     resultsBox,
@@ -1149,7 +1205,7 @@ function paintResults(box, items) {
       id: o.savedId || db.newId(),
       date: new Date().toISOString(),
       title: o.title, reason: o.reason, itemIds: o.item_ids,
-      mood: outfitState.mood, occasion: outfitState.occasion,
+      mood: outfitState.mood, occasion: outfitState.occasion, dressCode: o.dressCode?.key || null,
       weather: outfitState.weather?.summary || null,
       rating: o.rating || null, worn: Boolean(o.worn),
     };
@@ -1187,6 +1243,7 @@ function paintResults(box, items) {
 
     box.append(h('div', { class: 'card outfit' },
       h('h3', {}, o.title),
+      dressCodeBadge(o),
       h('p', {}, o.reason),
       lookBox(o.pieces.map((p) => byId[p.id] || p)),
       h('div', { class: 'pieces' }, o.pieces.map((p) => {
@@ -1206,6 +1263,15 @@ function paintResults(box, items) {
         h('span', {}, ' (tocca per cercarlo online)')) : null,
       h('div', { class: 'row' }, up, down, h('span', { style: 'flex:1' }), o.ideas.length === o.pieces.length ? null : wear)));
   }
+}
+
+// Sotto il titolo: se l'outfit rispetta il dress code scelto, o cosa manca per rispettarlo.
+function dressCodeBadge(o) {
+  const dc = o.dressCode;
+  if (!dc) return null;
+  return o.ideas.length
+    ? h('p', { class: 'dc-badge warn' }, `${dc.icon} Per il dress code `, h('b', {}, dc.label), ' ti manca qualcosa: guarda i capi da prendere qui sotto.')
+    : h('p', { class: 'dc-badge ok' }, '✓ Rispetta il dress code ', h('b', {}, dc.label), `: ${dc.check}.`);
 }
 
 // Anteprima: il manichino con i colori dei capi proposti, disegnato subito sul telefono.
@@ -1396,16 +1462,24 @@ function planDay(k, fc, items) {
   const d = fromKey(k);
   let occasion = outfitState.occasion;
   let mood = outfitState.mood;
+  let dressCode = outfitState.dressCode;
   openDialog((close) => {
+    const occSlot = h('div');
+    const paintOcc = () => occSlot.replaceChildren(chipGroup(OCCASIONS, occasion, { onChange: (v) => { occasion = v; } }));
+    paintOcc();
+    const planDc = dressCodePicker(() => dressCode, (v) => { dressCode = v; }, {
+      onInvite: (r) => { dressCode = r.code; occasion = r.occasion; paintOcc(); planDc.refresh(); },
+    });
     const results = h('div');
     const go = async () => {
       const [profile, history] = await Promise.all([db.getKV('profile'), db.getAll('outfits')]);
-      const list = suggestOutfits({ items: items.filter(inSection), profile: sectionProfile(profile), history, mood, occasion, weather: fc || null });
+      const list = suggestOutfits({ items: items.filter(inSection), profile: sectionProfile(profile), history, mood, occasion, dressCode, weather: fc || null });
       results.replaceChildren(...list.map((o) => {
         const pieces = o.pieces;
         const usable = o.ideas.length < o.pieces.length;
         return h('div', { class: 'card outfit' },
           h('h3', {}, o.title),
+          dressCodeBadge(o),
           h('p', {}, o.reason),
           h('figure', { class: 'look' }, lookView(pieces, occasion)),
           o.ideas.length ? h('p', { class: 'hint' }, `Ti manca: ${o.ideas.map(ideaName).join(', ')}`) : null,
@@ -1415,7 +1489,7 @@ function planDay(k, fc, items) {
               await db.put('outfits', {
                 id: db.newId(), date: new Date().toISOString(), planned: k,
                 title: o.title, reason: o.reason, itemIds: o.item_ids.filter((id) => items.some((it) => it.id === id)),
-                mood, occasion, weather: fc?.summary || null, rating: null, worn: false,
+                mood, occasion, dressCode: o.dressCode?.key || null, weather: fc?.summary || null, rating: null, worn: false,
               });
               close();
               toast('Outfit pianificato');
@@ -1428,9 +1502,10 @@ function planDay(k, fc, items) {
       sheetHead(`Pianifica ${WEEKDAYS[d.getDay()]} ${d.getDate()}`, close),
       fc ? h('p', { class: 'hint' }, `${skyIcon(fc.sky)} ${fc.sky}, ${fc.min}°/${fc.max}°, pioggia ${fc.rain}%`) : null,
       h('h2', {}, 'Per cosa ti vesti?'),
-      chipGroup(OCCASIONS, occasion, { onChange: (v) => { occasion = v; } }),
+      occSlot,
       h('h2', {}, 'Come vorresti sentirti?'),
       chipGroup(MOODS, mood, { onChange: (v) => { mood = v; } }),
+      ...planDc.nodes,
       h('button', { type: 'button', class: 'btn primary block', onclick: go }, 'Proponimi 3 outfit'),
       h('div', { class: 'spacer' }),
       results);
