@@ -12,17 +12,17 @@ import {
   mannequinMatch, currentGender, CUSTOM, ZONE_CATEGORIES, zoneOfCategory,
 } from './catalog.js';
 
-const APP_VERSION = '47'; // da aumentare a ogni modifica, si vede nelle Impostazioni
+const APP_VERSION = '48'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
 
 // ---------- sezioni dei capi (stile maschile, femminile o entrambi) ----------
 
-// Dal profilo: 'uomo' o 'donna' tengono i capi in una sola sezione, 'entrambi' (o vuoto) li lascia scegliere.
+// Ogni capo ha il suo armadio (it.per): uomo, donna o entrambi. Il profilo sceglie solo quello dei capi nuovi.
 let profileGender = '';
 const SECTION_LABELS = { uomo: 'Stile maschile', donna: 'Stile femminile', entrambi: 'Entrambi' };
 const fixedSection = () => (profileGender === 'uomo' || profileGender === 'donna' ? profileGender : '');
-// I capi caricati prima di questa scelta seguono il profilo.
+const ARMADI = { uomo: 'Uomo', donna: 'Donna', entrambi: 'Entrambi' };
 const itemSection = (it) => it.per || fixedSection() || 'entrambi';
 const inSection = (it) => { const s = itemSection(it); return s === 'entrambi' || s === currentGender(); };
 async function loadProfileGender() {
@@ -32,12 +32,20 @@ async function loadProfileGender() {
 // Solo i capi della sezione aperta (maschile o femminile).
 async function sectionItems() {
   const [all] = await Promise.all([db.getAll('items'), loadProfileGender()]);
+  // Capi caricati prima degli armadi: ricevono una volta sola l'armadio del profilo e poi restano lì.
+  for (const it of all) if (!it.per) { it.per = itemSection(it); await db.put('items', it); }
   return all.filter(inSection);
 }
 // Proposte e link per comprare seguono la sezione aperta.
 const sectionProfile = (profile) => ({ ...(profile || {}), gender: currentGender() });
 
 // ---------- utilità ----------
+
+// append e replaceChildren del browser scriverebbero "null" per i pezzi facoltativi: si saltano.
+for (const m of ['append', 'prepend', 'replaceChildren']) {
+  const orig = Element.prototype[m];
+  Element.prototype[m] = function (...nodes) { return orig.apply(this, nodes.filter((n) => n != null && n !== false)); };
+}
 
 function h(tag, attrs = {}, ...children) {
   const el = document.createElement(tag);
@@ -725,7 +733,7 @@ function editItem(item, { isNew = false } = {}) {
     };
     let category = item.category;
     let per = itemSection(item);
-    const perChips = fixedSection() ? null : chipGroup({ uomo: 'Stile maschile', donna: 'Stile femminile', entrambi: 'Entrambi' }, per, {
+    const perChips = chipGroup(ARMADI, per, {
       onChange: (v) => { per = v; },
     });
     let lastEmb = null; // impronta della foto, per ricordare il tipo scelto
@@ -1012,8 +1020,8 @@ function editItem(item, { isNew = false } = {}) {
       field('Formalità', f.formality),
       h('div', { class: 'field' }, h('span', {}, 'Stagioni'), seasonsSlot),
       h('div', { class: 'field' }, h('span', {}, 'Stili'), stylesSlot),
-      perChips ? h('div', { class: 'field' }, h('span', {}, 'Si vede nella sezione'), perChips,
-        h('small', { class: 'hint' }, 'Con "Entrambi" lo stesso capo si usa sia coi manichini maschili sia con quelli femminili.')) : null,
+      h('div', { class: 'field' }, h('span', {}, 'Armadio'), perChips,
+        h('small', { class: 'hint' }, 'Il capo si vede e si usa solo nell\'armadio scelto (tasto ♂/♀ in alto). Con "Entrambi" sta in tutti e due.')),
       h('div', { class: 'two' }, field('Marca', f.brand), field('Taglia', f.size)),
       field('Note', f.notes),
       h('div', { class: 'row end' },
@@ -1633,11 +1641,7 @@ async function renderProfile() {
         h('div', { class: 'meter' }, bar),
         h('p', { class: 'hint' }, 'Più lo completi, più gli outfit e i link per comprare sono su misura per te. Si salva da solo.'))),
     section('Il tuo stile di abiti', 'Che vestiti porti? Non conta chi sei, solo i capi che ti piace indossare.', genderChips,
-      h('p', { class: 'hint' }, {
-        uomo: 'I capi che carichi si vedono e si usano solo nella sezione maschile (tasto ♂/♀ in alto).',
-        donna: 'I capi che carichi si vedono e si usano solo nella sezione femminile (tasto ♂/♀ in alto).',
-        entrambi: 'Ogni capo può stare in una sezione o in entrambe: lo scegli nella sua scheda.',
-      }[gender] || 'Decide in quale sezione finiscono i capi che carichi.')),
+      h('p', { class: 'hint' }, 'Decide in quale armadio vanno i capi nuovi. Quelli già caricati restano dove sono: per spostarne uno aprilo e cambia "Armadio".')),
     section('Taglie', 'Servono per cercare online i capi nella tua taglia.',
       field('Parte sopra', f.topSize), sizeChips(f.topSize, ['XS', 'S', 'M', 'L', 'XL', 'XXL']),
       field('Parte sotto', f.bottomSize),
