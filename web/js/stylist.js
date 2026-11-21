@@ -7,13 +7,15 @@ const OCCASION_FORMALITY = {
 };
 
 // Cosa cerca ogni umore: stili preferiti, colori vivaci o neutri, fantasie.
+// formality sposta l'eleganza dell'occasione; colors dice come premiare l'insieme dei colori:
+// calm = tutto neutro e morbido, accent = un solo colore deciso, mix = più colori e fantasie insieme.
 const MOOD_PREFS = {
   energico: { styles: ['sporty', 'streetwear', 'casual'], bright: 1, patterns: 0 },
-  rilassato: { styles: ['casual', 'minimal'], bright: -0.5, patterns: 0 },
+  rilassato: { styles: ['casual', 'minimal'], bright: -0.5, patterns: 0, formality: -0.5, colors: 'calm' },
   elegante: { styles: ['formal', 'classic', 'smart_casual'], bright: -0.5, patterns: -0.5, formality: 1 },
-  creativo: { styles: ['edgy', 'boho', 'streetwear', 'romantic'], bright: 1, patterns: 1 },
+  creativo: { styles: ['edgy', 'boho', 'streetwear', 'romantic'], bright: 1, patterns: 1, colors: 'mix' },
   comodo: { styles: ['casual', 'sporty'], bright: 0, patterns: 0, formality: -1 },
-  sicuro: { styles: ['classic', 'smart_casual', 'minimal'], bright: 0, patterns: -0.5 },
+  sicuro: { styles: ['classic', 'smart_casual', 'minimal'], bright: 0, patterns: -0.5, formality: 0.5, colors: 'accent' },
 };
 
 // Dress code: eleganza fissa e capi ammessi. "only" = solo questi tipi per categoria, "no" = tipi vietati.
@@ -194,7 +196,9 @@ function scoreItem(it, ctx) {
   if (f < lo) s -= (lo - f) * 2.5;
   if (f > hi) s -= (f - hi) * 2.5;
   if (it.seasons?.length && !it.seasons.includes(ctx.season)) s -= 3;
-  for (const st of it.styles || []) {
+  // Stili del capo più quelli del suo tipo, così anche i capi già salvati seguono il catalogo.
+  const styles = new Set([...(it.styles || []), ...(findSubtype(it.category, it.subcategory)?.styles || [])]);
+  for (const st of styles) {
     if (ctx.mood.styles.includes(st)) s += 1;
     if (ctx.profileStyles.includes(st)) s += 0.7;
   }
@@ -224,12 +228,13 @@ function harmony(pieces, ctx) {
   let s = 0;
   const colors = pieces.flatMap((p) => (p.colors || []).slice(0, 1));
   const bright = [...new Set(colors.filter((c) => !isNeutral(c)))];
-  if (bright.length === 0) s += 1; // tutto neutro: sempre elegante
-  else if (bright.length === 1) s += 2; // un solo colore protagonista
-  else if (bright.length === 2) s += ctx.mood.bright > 0 ? 0.5 : -1;
-  else s -= 3;
+  const tone = ctx.mood.colors;
+  if (bright.length === 0) s += tone === 'calm' ? 2.5 : tone === 'accent' ? 0 : 1; // tutto neutro: sempre elegante
+  else if (bright.length === 1) s += tone === 'accent' ? 3.5 : tone === 'calm' ? 1 : 2; // un solo colore protagonista
+  else if (bright.length === 2) s += tone === 'mix' ? 2 : ctx.mood.bright > 0 ? 0.5 : -1;
+  else s -= tone === 'mix' ? 1 : 3;
   const patterned = pieces.filter((p) => p.pattern && p.pattern !== 'solid').length;
-  if (patterned > 1) s -= 2.5;
+  if (patterned > 1) s -= tone === 'mix' ? 1 : 2.5;
   // Formalità coerente tra i pezzi.
   const fs = pieces.map((p) => p.formality || 3);
   s -= (Math.max(...fs) - Math.min(...fs) > 2 ? 2 : 0);
@@ -245,11 +250,11 @@ function harmony(pieces, ctx) {
 
 function explain(pieces, ctx, extras) {
   const parts = [];
+  const occ = { lavoro: 'il lavoro', tempo_libero: 'il tempo libero', serata: 'la serata', sport: 'lo sport', evento: 'un evento', viaggio: 'il viaggio' }[ctx.occasion] || 'oggi';
   if (ctx.code) {
-    parts.push(`Adatto al dress code ${DRESS_CODES[ctx.code].label.toLowerCase()}`);
+    parts.push(`Adatto al dress code ${DRESS_CODES[ctx.code].label.toLowerCase()} per ${occ}`);
     return explainRest(pieces, ctx, extras, parts);
   }
-  const occ = { lavoro: 'il lavoro', tempo_libero: 'il tempo libero', serata: 'la serata', sport: 'lo sport', evento: 'un evento', viaggio: 'il viaggio' }[ctx.occasion] || 'oggi';
   const [lo, hi] = ctx.formality;
   const fits = pieces.every((x) => (x.formality || 3) >= lo - 0.5 && (x.formality || 3) <= hi + 0.5);
   const allIdeas = pieces.every((x) => x.idea);
@@ -311,7 +316,13 @@ function suggestOutfitsCore({ items, profile, history, mood, occasion, weather, 
   const moodPrefs = MOOD_PREFS[mood] || MOOD_PREFS.rilassato;
   let formality = [...(OCCASION_FORMALITY[occasion] || [1, 3])];
   if (moodPrefs.formality) formality = formality.map((v) => Math.min(5, Math.max(1, v + moodPrefs.formality)));
-  if (dc) formality = [...dc.formality]; // il dress code vince sull'occasione e sull'umore
+  // Il dress code fissa i limiti; dentro quei limiti contano ancora occasione e umore.
+  // Es. Business (4–5) per Lavoro (3–4) → 4; Casual (1–2) per una Serata (3–4) → 2.
+  if (dc) {
+    const [dlo, dhi] = dc.formality;
+    const clamp = (v) => Math.min(dhi, Math.max(dlo, v));
+    formality = [clamp(formality[0]), clamp(formality[1])];
+  }
   const ctx = {
     moodKey: mood, occasion, weather, history, code: dc ? dressCode : null,
     mood: moodPrefs,
