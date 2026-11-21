@@ -1,1 +1,34 @@
-[]
+[
+ {
+  "id": "ef7b041a-1247-4d91-bec1-d137096187a1",
+  "name": "Sneakers e pantaloni eleganti",
+  "gender": "uomo",
+  "occasions": [
+   "tempo_libero"
+  ],
+  "garments": {
+   "1": "Tuta",
+   "2": "Maglia sportiva",
+   "3": "Pantaloni eleganti",
+   "4": "Sneakers"
+  },
+  "main": "Sneakers",
+  "createdAt": "2026-11-17T20:53:07.299Z"
+ },
+ {
+  "id": "cc151c6d-8270-4b82-8c51-ed5666a1dad7",
+  "name": "Impermeabile e cargo",
+  "gender": "uomo",
+  "occasions": [
+   "tempo_libero"
+  ],
+  "garments": {
+   "1": "Impermeabile",
+   "2": "Felpa",
+   "3": "Cargo",
+   "4": "Sneakers"
+  },
+  "main": null,
+  "createdAt": "2026-11-17T08:01:45.946Z"
+ }
+]
