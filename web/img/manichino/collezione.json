@@ -30,5 +30,22 @@
   },
   "main": null,
   "createdAt": "2026-11-17T08:01:45.946Z"
+ },
+ {
+  "id": "e995ced3-b6cd-44b9-a6b0-ff31e58584c9",
+  "name": "Sneakers e cargo",
+  "gender": "uomo",
+  "occasions": [
+   "viaggio"
+  ],
+  "garments": {
+   "1": "Completo",
+   "2": "Felpa",
+   "3": "Cargo",
+   "4": "Sneakers"
+  },
+  "main": "Sneakers",
+  "pose": "viaggio",
+  "createdAt": "2026-11-21T13:55:37.048Z"
  }
 ]
