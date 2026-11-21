@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[2]
 WEB = ROOT / 'web'
 DIR = WEB / 'img' / 'manichino' / 'collezione'
 LIST = WEB / 'img' / 'manichino' / 'collezione.json'
-META = ['name', 'gender', 'occasions', 'garments', 'main', 'createdAt']
+META = ['name', 'gender', 'occasions', 'garments', 'main', 'pose', 'createdAt']
 SAFE_ID = re.compile(r'^[A-Za-z0-9_-]{1,64}$')
 
 

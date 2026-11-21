@@ -2,7 +2,7 @@ import * as db from './db.js';
 import { getWeather, getForecast, savedCity, setCity, forgetCity } from './weather.js';
 import { detectColors } from './colors.js';
 import { suggestOutfits, ideaName, DRESS_CODES, readInvite } from './stylist.js';
-import { lookView, garmentView, previewPhoto, forgetPhoto } from './look.js';
+import { lookView, garmentView, previewPhoto, forgetPhoto, POSES } from './look.js';
 import { prepareMannequin, loadCustom, saveCustom, removeCustom, syncShared, isAdmin, publishShared, unpublishShared, makeDefinitive, fixedCount } from './manichini.js';
 import { analyzeGarment, isModelCached, rememberGarment, forgetGarment, learnFromWardrobe } from './riconosci.js';
 import { removeBackground } from './sfondo.js';
@@ -12,7 +12,7 @@ import {
   mannequinMatch, currentGender, CUSTOM, ZONE_CATEGORIES, zoneOfCategory,
 } from './catalog.js';
 
-const APP_VERSION = '54'; // da aumentare a ogni modifica, si vede nelle Impostazioni
+const APP_VERSION = '55'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
 
@@ -164,18 +164,23 @@ const OTHERS = [
 ];
 
 // ref: il capo vero (foto, colori, materiale): il testo chiede di riprodurlo fedelmente.
-function newMannequinPrompt(category, name, ref) {
+// pose: una posa dei manichini dell'app (POSES): il testo chiede di copiarla dalla seconda foto.
+function newMannequinPrompt(category, name, ref, pose) {
   const donna = currentGender() === 'donna';
   const what = EN[name] || name;
   const zone = ZONE_COLOR[category] || 'ROSSO puro';
   const second = ref?.colors?.[1];
   const paren = what.toLowerCase() === name.toLowerCase() ? '' : ` (${what})`;
+  // Piedistallo opaco: con quello lucido le scarpe si specchiano e il riflesso si colora a blocchi.
   const lines = [
-    `Crea un'immagine verticale 2:3, figura intera centrata, di un manichino ${donna ? 'femminile' : 'maschile'} nero lucido senza volto, in piedi su un piedistallo ROTONDO nero lucido con bordo dorato, sfondo nero con un cerchio dorato luminoso dietro (leggero bagliore caldo).`,
+    `Crea un'immagine verticale 2:3, figura intera centrata, di un manichino ${donna ? 'femminile' : 'maschile'} nero lucido senza volto, in piedi su un piedistallo ROTONDO nero OPACO con bordo dorato (superficie opaca, le scarpe NON si specchiano, nessun riflesso sotto i piedi), sfondo nero con un cerchio dorato luminoso dietro (leggero bagliore caldo).`,
   ];
+  if (pose) {
+    lines.push(`Usa ESATTAMENTE la posa, l'inquadratura e le proporzioni del manichino della ${ref?.image ? 'seconda' : ''} immagine allegata (posa "${pose.label}"): stessa posizione di braccia, gambe e piedi, stessi tipi di capi.`);
+  }
   if (ref?.image) {
     lines.push(
-      `Il manichino indossa ${articolo(name)}${paren}: riproduci fedelmente il capo della foto allegata (forma, modello, proporzioni, ${DETAILS[category] || DETAILS.accessory}), senza scritte né loghi leggibili.`,
+      `Il manichino indossa ${articolo(name)}${paren}: riproduci fedelmente il capo della ${pose ? 'prima ' : ''}foto allegata (forma, modello, proporzioni, ${DETAILS[category] || DETAILS.accessory}), senza scritte né loghi leggibili.`,
       `Colora ${MAIN_PART[category] || 'il tessuto principale'} in tinta unita ${zone}, così l'app può ricolorarlo; ${SECONDARY[category] || 'i dettagli'} restano del loro colore vero${second ? ` (${second})` : ''}.`,
     );
     if (ref.material) lines.push(`Materiale: ${ref.material}, con la sua trama visibile.`);
@@ -190,21 +195,36 @@ function newMannequinPrompt(category, name, ref) {
 }
 
 // Manda testo e foto del capo all'app scelta (menu Condividi di Android: ChatGPT, Gemini…).
-async function shareToAI(prompt, file, fallback) {
-  if (file && navigator.canShare?.({ files: [file] })) {
-    try { await navigator.share({ text: prompt, files: [file] }); return; } catch (e) { if (e?.name === 'AbortError') return; }
+async function shareToAI(prompt, files, fallback) {
+  const list = (Array.isArray(files) ? files : [files]).filter(Boolean);
+  if (list.length && navigator.canShare?.({ files: list })) {
+    try { await navigator.share({ text: prompt, files: list }); return; } catch (e) { if (e?.name === 'AbortError') return; }
   }
   fallback();
 }
 
-function showNewMannequin(category, name, ref) {
-  const prompt = newMannequinPrompt(category, name, ref);
+async function showNewMannequin(category, name, ref, pose) {
+  const prompt = newMannequinPrompt(category, name, ref, pose);
   const ext = ref?.image?.type?.split('/')[1] || 'jpg';
   const file = ref?.image ? new File([ref.image], `capo.${ext}`, { type: ref.image.type || 'image/jpeg' }) : null;
   const photoURL = file ? URL.createObjectURL(file) : null;
+  // La posa: l'immagine del manichino dell'app parte insieme al testo.
+  let poseFile = null;
+  if (pose) {
+    try {
+      const blob = await (await fetch(`img/manichino/${pose.base}.jpg`)).blob();
+      poseFile = new File([blob], `posa-${pose.base}.jpg`, { type: 'image/jpeg' });
+    } catch { /* senza rete: la foto della posa si salva a mano */ }
+  }
+  const files = [file, poseFile].filter(Boolean);
+  const poseURL = pose ? `img/manichino/${pose.base}.jpg` : null;
   openDialog((close) => h('div', { class: 'sheet' },
     sheetHead(`Nuovo manichino: ${name}`, close),
-    h('p', {}, mannequinMatch(category, name)?.same
+    pose ? h('p', {}, `Crea con ChatGPT o Gemini ${articolo(name)} sulla posa "${pose.label}" e caricalo qui: nelle proposte con questa posa l'app userà il tuo.`) : null,
+    pose ? h('div', { class: 'refphoto' },
+      h('img', { src: poseURL, alt: `Posa ${pose.label}` }),
+      h('p', { class: 'hint' }, 'Parte anche questa immagine, così copia la posa.', ' ', h('a', { href: poseURL, download: `posa-${pose.base}.jpg` }, 'Salva la posa'))) : null,
+    pose ? null : h('p', {}, mannequinMatch(category, name)?.same
       ? `Crea con ChatGPT o Gemini un manichino con ${articolo(name)} e caricalo qui: l'app lo prepara da sola e per questo capo userà il tuo al posto di quello dell'app.`
       : `I manichini ${currentGender()} non hanno ${articolo(name)}. Puoi crearne uno con ChatGPT o Gemini e caricarlo qui: l'app lo prepara da sola.`),
     file ? h('div', { class: 'refphoto' },
@@ -212,16 +232,16 @@ function showNewMannequin(category, name, ref) {
       h('p', { class: 'hint' }, 'Insieme al testo parte la foto del tuo capo, così lo riproduce fedelmente: forma, suola, lacci, cuciture.',
         ' ', h('a', { href: photoURL, download: `capo.${ext}` }, 'Salva la foto'))) : null,
     h('ol', { class: 'steps' },
-      h('li', {}, file ? 'Tocca ChatGPT o Gemini e scegli l\'app dal menu: partono il testo e la foto.' : 'Tocca ChatGPT o Gemini: si apre col testo già pronto.'),
+      h('li', {}, files.length ? `Tocca ChatGPT o Gemini e scegli l'app dal menu: partono il testo e ${files.length > 1 ? 'le foto' : 'la foto'}.` : 'Tocca ChatGPT o Gemini: si apre col testo già pronto.'),
       h('li', {}, `Controlla che la parte principale sia ${ZONE_COLOR[category] || 'ROSSO puro'} pieno e gli altri capi nei loro colori pieni.`),
       h('li', {}, 'Salva l\'immagine sul telefono e tocca "Carica il manichino".')),
     h('textarea', { class: 'prompt', readonly: true, rows: 7 }, prompt),
     h('div', { class: 'row' },
       h('button', {
         type: 'button', class: 'btn primary',
-        onclick: () => shareToAI(prompt, file, () => window.open(`https://chatgpt.com/?q=${encodeURIComponent(prompt)}`, '_blank', 'noopener')),
+        onclick: () => shareToAI(prompt, files, () => window.open(`https://chatgpt.com/?q=${encodeURIComponent(prompt)}`, '_blank', 'noopener')),
       }, 'Crea con ChatGPT'),
-      h('button', { type: 'button', class: 'btn primary', onclick: () => shareToAI(prompt, file, () => openGemini(prompt)) }, 'Crea con Gemini')),
+      h('button', { type: 'button', class: 'btn primary', onclick: () => shareToAI(prompt, files, () => openGemini(prompt)) }, 'Crea con Gemini')),
     h('div', { class: 'row end' },
       h('button', {
         type: 'button', class: 'btn',
@@ -229,7 +249,7 @@ function showNewMannequin(category, name, ref) {
           try { await navigator.clipboard.writeText(prompt); toast('Testo copiato'); } catch { toast('Tieni premuto sul testo per copiarlo'); }
         },
       }, 'Copia il testo'),
-      h('button', { type: 'button', class: 'btn primary', onclick: () => { close(); openMannequinEditor({ category, name }); } }, 'Carica il manichino'))));
+      h('button', { type: 'button', class: 'btn primary', onclick: () => { close(); openMannequinEditor({ category, name, pose }); } }, 'Carica il manichino'))));
 }
 
 // ---------- manichino creato da te ----------
@@ -241,7 +261,7 @@ const TRY_BASE = { 1: 'blu navy', 2: 'bianco', 3: 'denim', 4: 'bianco' };
 const TRY_COLORS = ['bordeaux', 'blu navy', 'grigio', 'verde oliva', 'beige', 'nero'];
 const MIN_ZONE = 1500; // pixel sotto i quali una zona non c'è
 
-function openMannequinEditor({ category, name, onSaved } = {}) {
+function openMannequinEditor({ category, name, onSaved, pose } = {}) {
   openDialog((close) => {
     const wrap = h('div', { class: 'sheet' });
     const fileIn = h('input', { type: 'file', accept: 'image/*', hidden: true });
@@ -251,9 +271,9 @@ function openMannequinEditor({ category, name, onSaved } = {}) {
     const pick = () => fileIn.click();
     const intro = () => body.replaceChildren(
       h('p', {}, 'Carica l\'immagine del manichino fatta con ChatGPT o Gemini, con i capi a colori pieni: giacca rossa, maglia verde, pantaloni blu, scarpe gialle.'),
-      category ? h('p', { class: 'hint' }, `${articolo(name)[0].toUpperCase()}${articolo(name).slice(1)} va in ${ZONE_COLOR[category] || 'ROSSO puro'}.`) : null,
+      category ? h('p', { class: 'hint' }, `${articolo(name)[0].toUpperCase()}${articolo(name).slice(1)} va in ${ZONE_COLOR[category] || 'ROSSO puro'}.${pose ? ` Posa: ${pose.label}.` : ''}`) : null,
       h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn primary', onclick: pick }, 'Scegli l\'immagine'),
-        category ? h('button', { type: 'button', class: 'btn', onclick: () => { close(); showNewMannequin(category, name); } }, 'Testo per crearlo') : null),
+        category ? h('button', { type: 'button', class: 'btn', onclick: () => { close(); showNewMannequin(category, name, null, pose); } }, 'Testo per crearlo') : null),
     );
 
     fileIn.addEventListener('change', async () => {
@@ -305,7 +325,7 @@ function openMannequinEditor({ category, name, onSaved } = {}) {
       const pubBox = h('input', { type: 'checkbox' });
       const pubRow = h('label', { class: 'check', hidden: true }, pubBox, ' Pubblica per tutti gli utenti dell\'app');
       isAdmin().then((v) => { if (v) { pubRow.hidden = false; pubBox.checked = true; } });
-      const occasions = chipGroup(OCCASIONS, ['tempo_libero'], { multiple: true });
+      const occasions = chipGroup(OCCASIONS, pose?.occasions || ['tempo_libero'], { multiple: true });
       const nameIn = h('input', { type: 'text', placeholder: 'es. Maglione e cargo' });
       const autoName = () => {
         const parts = zones.map((z) => selects[z].value);
@@ -365,7 +385,7 @@ function openMannequinEditor({ category, name, onSaved } = {}) {
         for (const z of zones) garments[z] = selects[z].value;
         const m = {
           id: db.newId(), name: nameIn.value.trim() || autoName(), gender: gender.value(), occasions: occ,
-          garments, main: presetZone && garments[presetZone] ? garments[presetZone] : null, base: prepared.base, zone: prepared.zone, createdAt: new Date().toISOString(),
+          garments, main: presetZone && garments[presetZone] ? garments[presetZone] : null, pose: pose?.base || null, base: prepared.base, zone: prepared.zone, createdAt: new Date().toISOString(),
         };
         try {
           await saveCustom(m);
@@ -482,6 +502,25 @@ async function openGemini(prompt) {
 }
 
 // ref: funzione che restituisce il capo vero (foto, colori, materiale) al momento del tocco.
+// Il capo c'è su un manichino tuo: le altre pose dell'app dove puoi crearlo (es. le sneakers
+// anche sulla posa della serata). Quelle già fatte hanno la spunta.
+function posesBox(category, name, ref) {
+  const g = currentGender();
+  const z = zoneOfCategory(category);
+  if (!z) return null;
+  const poses = POSES[g].filter((p) => p.base !== 'donna-vestito' || [1, 4].includes(z));
+  const done = (p) => CUSTOM.some((c) => c.gender === g && c.garments?.[z] === name && c.pose === p.base);
+  const n = poses.filter(done).length;
+  return h('details', { class: 'poses' },
+    h('summary', {}, `${articolo(name)[0].toUpperCase()}${articolo(name).slice(1)} anche su altre pose (${n}/${poses.length})`),
+    h('p', { class: 'hint' }, 'Il tuo manichino si usa già in tutte le proposte con questo capo, ma con la sua posa. Creane uno sulla posa di un manichino dell\'app e nelle proposte con quella posa l\'app userà il tuo.'),
+    h('div', { class: 'pose-grid' }, poses.map((p) => h('div', { class: 'pose' + (done(p) ? ' done' : '') },
+      h('img', { src: `img/manichino/${p.base}.jpg`, alt: p.label, loading: 'lazy' }),
+      h('small', {}, p.label),
+      done(p) ? h('span', { class: 'pose-ok' }, '✓ Fatto')
+        : h('button', { type: 'button', class: 'btn small', onclick: () => showNewMannequin(category, name, ref?.(), p) }, 'Crea')))));
+}
+
 function newMannequinButton(category, name, label = 'Come creare il manichino', ref) {
   return h('div', {}, h('button', { type: 'button', class: 'btn small', onclick: () => showNewMannequin(category, name, ref?.()) }, label));
 }
@@ -774,7 +813,8 @@ function editItem(item, { isNew = false } = {}) {
         box = h('div', { class: 'match ok' }, h('strong', {}, `✓ Sul ${notMine ? '' : 'tuo '}manichino${mine ? ` "${mine.name}"` : ''}`),
           notMine ? `È uno dei manichini ${mine.fixed ? 'dell\'app' : 'per tutti'}. Se qualcosa non torna puoi farne uno tuo: prende il suo posto.`
             : 'Se qualcosa non torna puoi rifarlo: quello nuovo prende il suo posto.',
-          newMannequinButton(category, name, notMine ? 'Crea un manichino tuo' : 'Rifai il manichino', capoVero));
+          newMannequinButton(category, name, notMine ? 'Crea un manichino tuo' : 'Rifai il manichino', capoVero),
+          posesBox(category, name, capoVero));
       } else if (m.same) {
         box = h('div', { class: 'match ok' }, h('strong', {}, `✓ Sui manichini: ${m.garment}`),
           `I ${who} hanno lo stesso capo, l'anteprima lo mostra col suo colore. Se sul manichino non viene bene, puoi crearne uno tuo per questo capo.`,
