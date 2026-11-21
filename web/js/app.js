@@ -12,7 +12,7 @@ import {
   mannequinMatch, currentGender, CUSTOM, ZONE_CATEGORIES, zoneOfCategory,
 } from './catalog.js';
 
-const APP_VERSION = '52'; // da aumentare a ogni modifica, si vede nelle Impostazioni
+const APP_VERSION = '53'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
 
@@ -712,6 +712,13 @@ async function addItemFromFile(file) {
   editItem(item, { isNew: true });
 }
 
+// A cosa somiglia una foto che non è un capo (nomi di tools/modello/non-capi.json).
+const NOT_GARMENT = {
+  mappa: 'una mappa', schermata: 'una schermata', documento: 'un documento o un testo', paesaggio: 'un paesaggio',
+  città: 'una strada o un palazzo', stanza: 'una stanza', veicolo: 'un veicolo', cibo: 'del cibo', animale: 'un animale',
+  volto: 'un volto', oggetto: 'un oggetto', pianta: 'una pianta o dei fiori', grafica: 'un disegno o una scritta',
+};
+
 function editItem(item, { isNew = false } = {}) {
   openDialog((close) => {
     const wrap = h('div', { class: 'sheet' });
@@ -961,7 +968,39 @@ function editItem(item, { isNew = false } = {}) {
     };
     paintBgSlot();
 
+    // ---------- è davvero un capo? ----------
+    // Foto nuova: prima di tutto si controlla (sul telefono) che sia un capo d'abbigliamento.
+    // Una mappa, una schermata, un paesaggio… non si salvano.
+    let garmentCheck = Promise.resolve(true);
+    const checkGarment = async () => {
+      status.replaceChildren(h('div', { class: 'status' }, h('span', { class: 'spinner' }),
+        isModelCached() ? 'Controllo che sia un capo…' : 'Controllo che sia un capo… (la prima volta scarico il modello, circa 12 MB)'));
+      let res;
+      try {
+        res = await analyzeGarment(withBg || item.image, 1);
+      } catch (e) {
+        console.warn('controllo capo', e);
+        status.replaceChildren();
+        return true; // senza modello (offline la prima volta) non si può controllare
+      }
+      status.replaceChildren();
+      if (res.garment?.ok !== false) return true;
+      const what = NOT_GARMENT[res.garment.other];
+      wrap.replaceChildren(
+        sheetHead('Foto non valida', close),
+        h('div', { class: 'not-garment' },
+          h('img', { class: 'preview', src: photo.src, alt: 'La foto scelta' }),
+          h('div', { class: 'error-box' },
+            h('strong', {}, 'Questa foto non è un capo d\'abbigliamento'),
+            h('p', {}, `${what ? `Sembra ${what}. ` : ''}Non l'ho aggiunta all'armadio: carica la foto di una maglia, un pantalone, una giacca, delle scarpe o un accessorio.`)),
+          h('div', { class: 'row end' },
+            h('button', { class: 'btn', type: 'button', onclick: close }, 'Chiudi'),
+            h('button', { class: 'btn primary', type: 'button', onclick: () => { close(); document.querySelector('.fab')?.click(); } }, 'Scegli un\'altra foto'))));
+      return false;
+    };
+
     const save = async () => {
+      if (isNew && !(await garmentCheck)) return;
       if (!category) { toast('Scegli una categoria.'); return; }
       const updated = {
         ...item,
@@ -1032,6 +1071,8 @@ function editItem(item, { isNew = false } = {}) {
     ].filter(Boolean));
     if (isNew) {
       setTimeout(async () => {
+        garmentCheck = checkGarment();
+        if (!(await garmentCheck)) return;
         await cutBackground(false);
         colorsDone = runColors();
         runGarment();
@@ -1357,19 +1398,35 @@ function dressCodeBadge(o) {
 }
 
 // Anteprima: il manichino con i colori dei capi proposti, disegnato subito sul telefono.
+// Vestibilità e budget del profilo (questionario iniziale) per i link di acquisto.
+const FITS = { aderente: 'Aderente', regolare: 'Regolare', comoda: 'Comoda / oversize' };
+const FIT_QUERY = { aderente: 'slim fit', comoda: 'oversize' };
+const BUDGETS = {
+  'fino a 30 € a capo': '€ · fino a 30',
+  '30–80 € a capo': '€€ · 30–80',
+  '80–150 € a capo': '€€€ · 80–150',
+  'oltre 150 € a capo': '€€€€ · oltre 150',
+};
+const BUDGET_RANGE = { 'fino a 30 € a capo': [0, 30], '30–80 € a capo': [30, 80], '80–150 € a capo': [80, 150], 'oltre 150 € a capo': [150, 0] };
+function shopSearch(name, category, profile) {
+  const p = profile || {};
+  const gender = { uomo: 'uomo', donna: 'donna' }[p.gender] || '';
+  const size = category === 'shoes' ? p.shoe : category === 'bottom' ? p.bottomSize : category === 'accessory' ? '' : p.topSize;
+  const fit = ['shoes', 'accessory'].includes(category) ? '' : FIT_QUERY[p.fit] || '';
+  const q = [name, gender, fit, size ? `taglia ${size}` : ''].filter(Boolean).join(' ');
+  const range = BUDGET_RANGE[p.budget];
+  const price = range ? `&tbs=mr:1,price:1${range[0] ? `,ppr_min:${range[0]}` : ''}${range[1] ? `,ppr_max:${range[1]}` : ''}` : '';
+  return `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(q)}${price}`;
+}
+
 function lookBox(pieces) {
   return h('figure', { class: 'look' }, lookView(pieces, outfitState.occasion), h('figcaption', {}, 'Anteprima dell\'outfit sul manichino'));
 }
 
-// Ricerca del capo online con la taglia del profilo.
+// Ricerca del capo online con la taglia, la vestibilità e il budget del profilo.
 function shopLink(it) {
-  const p = outfitState.profile || {};
-  const gender = { uomo: 'uomo', donna: 'donna' }[p.gender] || '';
-  const size = it.category === 'shoes' ? p.shoe : it.category === 'bottom' ? p.bottomSize : p.topSize;
-  const q = [ideaName(it), gender, size ? `taglia ${size}` : ''].filter(Boolean).join(' ');
-  return `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(q)}`;
+  return shopSearch(ideaName(it), it.category, outfitState.profile);
 }
-
 // ---------- Diario: calendario degli outfit e statistiche ----------
 
 const pad2 = (n) => String(n).padStart(2, '0');
@@ -1617,15 +1674,23 @@ function wardrobeGaps(items, profile) {
   add(!has('shoes', ['Scarpe da corsa']) && !has('bottom', ['Pantaloni sportivi', 'Leggings']), 'Niente per lo sport.', { category: 'shoes', subcategory: 'Scarpe da corsa', colors: ['nero'] });
   add(!items.some((it) => ['top'].includes(it.category) && ['bianco', 'nero', 'grigio', 'grigio chiaro'].includes(it.colors?.[0])),
     'Nessuna maglia neutra (bianca, nera o grigia), la più facile da abbinare.', { category: 'top', subcategory: 'T-shirt', colors: ['bianco'] });
+  // Colori del profilo: mai un colore da evitare; se possibile uno che ami tra quelli adatti.
+  const list = (v) => String(v || '').toLowerCase().split(/[,;]+/).map((x) => x.trim()).filter(Boolean);
+  const avoid = list(profile?.avoidColors);
+  const liked = list(profile?.likedColors);
+  const neutral = ['nero', 'blu navy', 'grigio', 'bianco', 'beige', 'marrone'];
+  const ok = (x) => !avoid.includes(x);
+  for (const g of gaps) {
+    const c = g.idea.colors[0];
+    const cands = /neutra/.test(g.text) ? ['bianco', 'nero', 'grigio', 'grigio chiaro'] : [c, ...neutral];
+    const pick = liked.find((x) => cands.includes(x) && ok(x)) || (ok(c) ? c : cands.find(ok)) || c;
+    g.idea = { ...g.idea, colors: [pick] };
+  }
   return gaps;
 }
 
 function gapLink(idea, profile) {
-  const p = profile || {};
-  const size = idea.category === 'shoes' ? p.shoe : idea.category === 'bottom' ? p.bottomSize : p.topSize;
-  const gender = { uomo: 'uomo', donna: 'donna' }[p.gender] || '';
-  const q = [`${idea.subcategory} ${idea.colors[0]}`, gender, size ? `taglia ${size}` : ''].filter(Boolean).join(' ');
-  return `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(q)}`;
+  return shopSearch(`${idea.subcategory} ${idea.colors[0]}`, idea.category, profile);
 }
 
 function statsView(items, outfits) {
@@ -1722,14 +1787,14 @@ async function renderProfile() {
   const pct = h('strong');
   let timer = 0;
   const collect = () => {
-    const out = { ...p, styles: styles.value(), gender, budget,
+    const out = { ...p, styles: styles.value(), gender, budget, fit, occasions: occasions.value(),
       likedColors: [...liked].join(', '), avoidColors: [...avoid].join(', ') };
     for (const [k, el] of Object.entries(f)) out[k] = el.value.trim();
     return out;
   };
   const paintProgress = () => {
     const o = collect();
-    const keys = ['gender', 'height', 'weight', 'shoe', 'topSize', 'bottomSize', 'styles', 'likedColors', 'budget', 'chest', 'waist'];
+    const keys = ['gender', 'height', 'weight', 'shoe', 'topSize', 'bottomSize', 'fit', 'styles', 'occasions', 'likedColors', 'budget', 'chest', 'waist'];
     const done = keys.filter((k) => (Array.isArray(o[k]) ? o[k].length : o[k])).length;
     const v = Math.round((done / keys.length) * 100);
     bar.style.width = `${v}%`;
@@ -1755,12 +1820,10 @@ async function renderProfile() {
   const sizeChips = (input, sizes) => chipGroup(Object.fromEntries(sizes.map((x) => [x, x])), input.value, {
     onChange: (v) => { input.value = v; save(); },
   });
-  const budgetChips = chipGroup({
-    'fino a 30 € a capo': '€ · fino a 30',
-    '30–80 € a capo': '€€ · 30–80',
-    '80–150 € a capo': '€€€ · 80–150',
-    'oltre 150 € a capo': '€€€€ · oltre 150',
-  }, budget, { onChange: (v) => { budget = v; save(); } });
+  const budgetChips = chipGroup(BUDGETS, budget, { onChange: (v) => { budget = v; save(); } });
+  let fit = p.fit || '';
+  const fitChips = chipGroup(FITS, fit, { onChange: (v) => { fit = v; save(); } });
+  const occasions = chipGroup(OCCASIONS, p.occasions, { multiple: true, onChange: save });
 
   const colorWrap = h('div');
   const paintColors = () => {
@@ -1808,7 +1871,10 @@ async function renderProfile() {
       h('div', { class: 'two' }, field('Altezza (cm)', f.height), field('Peso (kg)', f.weight)),
       h('div', { class: 'two' }, field('Torace (cm)', f.chest), field('Vita (cm)', f.waist)),
       field('Fianchi (cm)', f.hips)),
-    section('Il tuo stile', 'Tocca gli stili che ti somigliano: le proposte li preferiscono.', styles),
+    section('Vestibilità', 'Come ti piace che stiano i vestiti: la uso nei link per comprare.', fitChips),
+    section('Il tuo stile', 'Tocca gli stili che ti somigliano: le proposte li preferiscono.', styles,
+      h('button', { class: 'link-btn', type: 'button', onclick: () => profileSetup({ force: true }).then(route) }, 'Rivedi gli stili con le foto (rifai il questionario)')),
+    section('Quando ti vesti', 'Le occasioni più frequenti: la prima è quella di partenza in Outfit.', occasions),
     section('Colori', 'Tocca un colore che ami o che vuoi evitare.', colorWrap),
     section('Budget per capo', null, budgetChips),
     section('Note', null, f.notes),
@@ -2098,7 +2164,7 @@ document.addEventListener('visibilitychange', async () => {
 const WELCOME = [
   ['👕', 'Fotografa i tuoi capi', 'Tocca + nell\'Armadio e scatta una foto. L\'app toglie lo sfondo e riconosce da sola tipo e colori.'],
   ['✨', 'Ogni giorno un outfit', 'In Outfit scegli umore e occasione: l\'app guarda il meteo e ti propone 3 abbinamenti sul manichino. Se manca qualcosa ti dice cosa prendere.'],
-  ['📅', 'Tieni il diario', 'Segna cosa indossi e pianifica la settimana. Nel Profilo metti taglie e gusti: le proposte diventano su misura.'],
+  ['📅', 'Tieni il diario', 'Segna cosa indossi e pianifica la settimana. Ora qualche domanda su taglie e gusti: le proposte diventano su misura.'],
 ];
 async function welcome(force = false) {
   try {
@@ -2134,6 +2200,195 @@ async function welcome(force = false) {
   } catch (e) { /* senza localStorage o IndexedDB si va avanti */ }
 }
 
+// ---------- Questionario del profilo ----------
+// Alla prima apertura (e finché non è finito) l'app chiede taglie, vestibilità, stili, colori,
+// occasioni e budget: servono alle proposte di outfit e ai link per comprare nella tua taglia.
+// Non si può saltare. Si può rifare dal Profilo.
+
+// Un outfit d'esempio per ogni stile, disegnato sul manichino dell'app.
+const ES = (category, subcategory, color, pattern = 'solid') => ({ id: `es:${subcategory}:${color}`, category, subcategory, colors: [color], pattern });
+const STYLE_LOOKS = {
+  casual: { occ: 'tempo_libero', uomo: [ES('top', 'T-shirt', 'bianco'), ES('bottom', 'Jeans', 'denim'), ES('shoes', 'Sneakers', 'bianco')],
+    donna: [ES('top', 'T-shirt', 'bianco'), ES('bottom', 'Jeans', 'denim'), ES('shoes', 'Sneakers', 'bianco')] },
+  minimal: { occ: 'tempo_libero', uomo: [ES('top', 'T-shirt', 'nero'), ES('bottom', 'Chino', 'grigio'), ES('shoes', 'Sneakers', 'bianco')],
+    donna: [ES('top', 'T-shirt', 'nero'), ES('bottom', 'Pantaloni eleganti', 'beige'), ES('shoes', 'Sneakers', 'bianco')] },
+  smart_casual: { occ: 'lavoro', uomo: [ES('outerwear', 'Blazer', 'blu navy'), ES('top', 'Camicia', 'azzurro'), ES('bottom', 'Chino', 'beige'), ES('shoes', 'Mocassini', 'marrone')],
+    donna: [ES('outerwear', 'Blazer', 'beige'), ES('top', 'Camicetta', 'bianco'), ES('bottom', 'Jeans', 'denim'), ES('shoes', 'Mocassini', 'marrone')] },
+  formal: { occ: 'evento', uomo: [ES('dress', 'Completo', 'nero'), ES('top', 'Camicia elegante', 'bianco'), ES('shoes', 'Scarpe eleganti', 'nero')],
+    donna: [ES('dress', 'Abito elegante', 'nero'), ES('shoes', 'Décolleté', 'nero')] },
+  sporty: { occ: 'sport', uomo: [ES('top', 'Maglia sportiva', 'blu'), ES('bottom', 'Pantaloni sportivi', 'nero'), ES('shoes', 'Scarpe da corsa', 'grigio')],
+    donna: [ES('top', 'Maglia sportiva', 'rosa'), ES('bottom', 'Leggings', 'nero'), ES('shoes', 'Scarpe da corsa', 'bianco')] },
+  streetwear: { occ: 'tempo_libero', uomo: [ES('outerwear', 'Giubbotto', 'verde oliva'), ES('top', 'Felpa', 'nero'), ES('bottom', 'Cargo', 'beige'), ES('shoes', 'Sneakers', 'bianco')],
+    donna: [ES('outerwear', 'Giubbotto', 'nero'), ES('top', 'Felpa', 'grigio'), ES('bottom', 'Cargo', 'verde oliva'), ES('shoes', 'Sneakers', 'bianco')] },
+  classic: { occ: 'lavoro', uomo: [ES('outerwear', 'Blazer', 'grigio'), ES('top', 'Camicia elegante', 'bianco'), ES('bottom', 'Pantaloni eleganti', 'blu navy'), ES('shoes', 'Scarpe eleganti', 'marrone')],
+    donna: [ES('outerwear', 'Blazer', 'blu navy'), ES('top', 'Camicetta', 'bianco'), ES('bottom', 'Pantaloni eleganti', 'blu navy'), ES('shoes', 'Décolleté', 'beige')] },
+  boho: { occ: 'tempo_libero', uomo: [ES('top', 'Camicia', 'beige', 'floral'), ES('bottom', 'Chino', 'marrone'), ES('shoes', 'Sandali', 'marrone')],
+    donna: [ES('dress', 'Vestito', 'arancione', 'floral'), ES('shoes', 'Sandali', 'marrone')] },
+  romantic: { occ: 'serata', uomo: [ES('top', 'Camicia', 'rosa'), ES('bottom', 'Chino', 'bianco'), ES('shoes', 'Mocassini', 'marrone')],
+    donna: [ES('top', 'Camicetta', 'rosa'), ES('bottom', 'Gonna', 'bianco'), ES('shoes', 'Décolleté', 'beige')] },
+  edgy: { occ: 'serata', uomo: [ES('outerwear', 'Giubbotto', 'nero'), ES('top', 'T-shirt', 'grigio'), ES('bottom', 'Jeans', 'nero'), ES('shoes', 'Stivaletti', 'nero')],
+    donna: [ES('outerwear', 'Giubbotto', 'nero'), ES('top', 'Top', 'nero'), ES('bottom', 'Jeans', 'nero'), ES('shoes', 'Stivaletti', 'nero')] },
+};
+const STYLE_HINTS = {
+  casual: 'Comodo, jeans e sneakers', minimal: 'Pochi colori, linee pulite', smart_casual: 'Curato ma non formale',
+  formal: 'Abiti e cerimonie', sporty: 'Tute e scarpe da corsa', streetwear: 'Felpe, cargo, stile urbano',
+  classic: 'Senza tempo, sartoriale', boho: 'Fantasie, toni caldi', romantic: 'Colori tenui, dettagli delicati', edgy: 'Nero, pelle, stivaletti',
+};
+const SIZES = {
+  top: ['XS', 'S', 'M', 'L', 'XL', 'XXL'],
+  bottom: { uomo: ['44', '46', '48', '50', '52', '54', '56'], donna: ['38', '40', '42', '44', '46', '48', '50'] },
+  shoe: { uomo: ['39', '40', '41', '42', '43', '44', '45', '46', '47'], donna: ['35', '36', '37', '38', '39', '40', '41', '42'] },
+};
+
+const profileDone = (p) => !!p?.onboarded;
+
+async function profileSetup({ force = false } = {}) {
+  let p;
+  try { p = (await db.getKV('profile')) || {}; } catch { return false; }
+  if (!force && profileDone(p)) return false;
+  const list = (v) => String(v || '').toLowerCase().split(/[,;]+/).map((x) => x.trim()).filter(Boolean);
+  const d = {
+    gender: p.gender || '', topSize: p.topSize || '', bottomSize: p.bottomSize || '', shoe: p.shoe || '',
+    height: p.height || '', weight: p.weight || '', fit: p.fit || '',
+    styles: [...(p.styles || [])], liked: new Set(list(p.likedColors)), avoid: new Set(list(p.avoidColors)),
+    occasions: [...(p.occasions || [])], budget: p.budget || '',
+  };
+  const sex = () => (d.gender === 'uomo' || d.gender === 'donna' ? d.gender : currentGender());
+
+  await new Promise((resolve) => {
+    const dlg = h('dialog', { class: 'setup-dlg' });
+    // Obbligatorio: il tasto indietro non lo chiude.
+    dlg.addEventListener('cancel', (e) => e.preventDefault());
+    const box = h('div', { class: 'sheet setup' });
+    dlg.append(box);
+    document.body.append(dlg);
+    dlg.showModal();
+    let step = 0;
+
+    const sizeField = (label, key, sizes, ph) => {
+      const input = h('input', { type: 'text', value: d[key], placeholder: ph, inputmode: key === 'topSize' ? 'text' : 'numeric' });
+      const chips = chipGroup(Object.fromEntries(sizes.map((x) => [x, x])), d[key], { onChange: (v) => { d[key] = v; input.value = v; check(); } });
+      input.addEventListener('input', () => { d[key] = input.value.trim(); check(); });
+      return h('div', { class: 'field' }, h('span', {}, label), chips, input);
+    };
+    const num = (label, key, ph) => {
+      const input = h('input', { type: 'number', inputmode: 'numeric', value: d[key], placeholder: ph });
+      input.addEventListener('input', () => { d[key] = input.value.trim(); });
+      return field(label, input);
+    };
+    const colorRow = (set, other) => h('div', { class: 'chips swatches' }, Object.keys(PALETTE).map((name) => {
+      const [r, g, b] = PALETTE[name];
+      return h('button', {
+        type: 'button', class: 'chip', 'aria-pressed': String(set.has(name)),
+        onclick: () => { if (set.has(name)) set.delete(name); else { set.add(name); other.delete(name); } paint(); },
+      }, h('span', { class: 'swatch', style: `background: rgb(${r},${g},${b})` }), name);
+    }));
+
+    // Ogni passo: titolo, spiegazione, contenuto e cosa manca per andare avanti.
+    const STEPS = [
+      {
+        title: 'Che vestiti porti?', hint: 'Non conta chi sei, solo i capi che ti piace indossare. Decide in quale armadio vanno i capi nuovi.',
+        body: () => [chipGroup(SECTION_LABELS, d.gender, { onChange: (v) => { d.gender = v; check(); } })],
+        missing: () => (d.gender ? '' : 'Scegli una delle tre risposte.'),
+      },
+      {
+        title: 'Le tue taglie', hint: 'Le metto nei link per comprare, così trovi i capi nella tua taglia.',
+        body: () => [
+          sizeField('Parte sopra (maglie, camicie, giacche)', 'topSize', SIZES.top, 'es. M'),
+          sizeField('Parte sotto (pantaloni, gonne)', 'bottomSize', SIZES.bottom[sex()], 'es. 48 o W32 L32'),
+          sizeField('Scarpe (EU)', 'shoe', SIZES.shoe[sex()], 'es. 43'),
+          h('div', { class: 'two' }, num('Altezza (cm), facoltativa', 'height', 'cm'), num('Peso (kg), facoltativo', 'weight', 'kg')),
+        ],
+        missing: () => (!d.topSize ? 'Manca la taglia della parte sopra.' : !d.bottomSize ? 'Manca la taglia della parte sotto.' : !d.shoe ? 'Manca il numero di scarpe.' : ''),
+      },
+      {
+        title: 'Come ti piace che stiano?', hint: 'La vestibilità che preferisci: la uso per cercare i capi da comprare.',
+        body: () => [chipGroup(FITS, d.fit, { onChange: (v) => { d.fit = v; check(); } })],
+        missing: () => (d.fit ? '' : 'Scegli una vestibilità.'),
+      },
+      {
+        title: 'Che stile ti somiglia?', hint: 'Tocca uno o più esempi: le proposte di outfit e i capi da comprare li preferiranno.',
+        body: () => [h('div', { class: 'style-cards' }, Object.entries(STYLES).map(([key, label]) => {
+          const look = STYLE_LOOKS[key];
+          const b = h('button', { type: 'button', class: 'style-card', 'aria-pressed': String(d.styles.includes(key)),
+            onclick: () => {
+              d.styles = d.styles.includes(key) ? d.styles.filter((x) => x !== key) : [...d.styles, key];
+              b.setAttribute('aria-pressed', String(d.styles.includes(key)));
+              check();
+            } },
+          lookView(look[sex()], look.occ),
+          h('b', {}, label), h('small', {}, STYLE_HINTS[key]));
+          return b;
+        }))],
+        missing: () => (d.styles.length ? '' : 'Scegli almeno uno stile.'),
+      },
+      {
+        title: 'I tuoi colori', hint: 'I colori che ami finiscono più spesso negli outfit; quelli da evitare mai nei consigli per comprare.',
+        body: () => [
+          h('div', { class: 'field' }, h('span', {}, 'Colori che ami (almeno uno)'), colorRow(d.liked, d.avoid)),
+          h('div', { class: 'field' }, h('span', {}, 'Colori da evitare (facoltativo)'), colorRow(d.avoid, d.liked)),
+        ],
+        missing: () => (d.liked.size ? '' : 'Scegli almeno un colore che ami.'),
+      },
+      {
+        title: 'Quando ti vesti e quanto spendi', hint: 'Le occasioni più frequenti e il budget per un capo nuovo.',
+        body: () => [
+          h('div', { class: 'field' }, h('span', {}, 'Occasioni più frequenti'),
+            chipGroup(OCCASIONS, d.occasions, { multiple: true, onChange: (v) => { d.occasions = v; check(); } })),
+          h('div', { class: 'field' }, h('span', {}, 'Budget per capo'),
+            chipGroup(BUDGETS, d.budget, { onChange: (v) => { d.budget = v; check(); } })),
+        ],
+        missing: () => (!d.occasions.length ? 'Scegli almeno un\'occasione.' : !d.budget ? 'Scegli un budget.' : ''),
+      },
+    ];
+
+    const note = h('p', { class: 'hint setup-missing' });
+    let next;
+    function check() {
+      const m = STEPS[step].missing();
+      note.textContent = m;
+      next.disabled = !!m;
+    }
+    const finish = async () => {
+      const out = {
+        ...p, gender: d.gender, topSize: d.topSize, bottomSize: d.bottomSize, shoe: d.shoe, height: d.height, weight: d.weight,
+        fit: d.fit, styles: d.styles, likedColors: [...d.liked].join(', '), avoidColors: [...d.avoid].join(', '),
+        occasions: d.occasions, budget: d.budget, onboarded: new Date().toISOString(),
+      };
+      await db.setKV('profile', out).catch(() => {});
+      profileGender = d.gender;
+      // Outfit parte dall'occasione più frequente, se non ne hai già scelta una.
+      let chosen = true;
+      try { chosen = !!localStorage.getItem('menga-outfit-scelte'); } catch { /* niente */ }
+      if (!chosen && OCCASIONS[d.occasions[0]]) { outfitState.occasion = d.occasions[0]; rememberChoices(); }
+      outfitState.results = null;
+      dlg.close(); dlg.remove();
+      toast('Profilo salvato: le proposte ora sono su misura per te');
+      resolve();
+    };
+    function paint() {
+      const st = STEPS[step];
+      const last = step === STEPS.length - 1;
+      next = h('button', { class: 'btn primary', type: 'button', onclick: () => { if (STEPS[step].missing()) return; if (last) finish(); else { step++; paint(); box.scrollTop = 0; dlg.scrollTop = 0; } } },
+        last ? 'Fatto' : 'Avanti');
+      box.replaceChildren(
+        step === 0 ? h('div', { class: 'login-head' }, h('img', { src: 'icons/icon-192-v3.png', alt: '', class: 'login-logo' }),
+          h('h1', {}, 'Il tuo profilo'), h('p', { class: 'hint' }, 'Poche domande per consigliarti outfit e acquisti giusti per te. Restano solo sul telefono.')) : null,
+        h('div', { class: 'welcome-dots' }, STEPS.map((_, i) => h('i', { class: i === step ? 'on' : '' }))),
+        h('h2', {}, st.title),
+        h('p', { class: 'hint' }, st.hint),
+        ...st.body(),
+        note,
+        h('div', { class: 'row end setup-nav' },
+          step ? h('button', { class: 'btn', type: 'button', onclick: () => { step--; paint(); } }, 'Indietro') : null,
+          next));
+      check();
+    }
+    paint();
+  });
+  return true;
+}
+
 // ---------- navigazione ----------
 
 const routes = { armadio: renderWardrobe, outfit: renderOutfit, diario: renderDiary, profilo: renderProfile };
@@ -2156,7 +2411,7 @@ loadCustom().catch(() => {}).then(route);
 // Arrivati manichini pubblici nuovi: si ridisegna la pagina (se non c'è una scheda aperta).
 window.addEventListener('manichini', () => { if (!document.querySelector('dialog[open]')) route(); });
 db.askPersistence();
-welcome().then(initAccount);
+welcome().then(() => profileSetup()).then((shown) => { if (shown) route(); }).then(initAccount);
 // L'app impara dai capi già salvati (in sottofondo, solo se il modello è già sul telefono).
 if (isModelCached()) setTimeout(() => { learnFromWardrobe().catch(() => {}); }, 4000);
 

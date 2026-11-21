@@ -387,3 +387,26 @@ dialog .welcome { text-align: center; padding: 20px 18px; }
 .dc-badge.ok { color: var(--accent); }
 .dc-badge.warn { color: var(--danger); }
 .sheet textarea { width: 100%; }
+
+/* Foto che non è un capo */
+.not-garment .preview { max-height: 220px; width: auto; max-width: 100%; display: block; margin: 0 auto 12px; border-radius: 12px; opacity: .6; }
+.error-box { border: 1px solid var(--danger); border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; }
+.error-box strong { color: var(--danger); display: block; margin-bottom: 4px; }
+.error-box p { margin: 0; color: var(--ink); }
+
+/* Questionario del profilo */
+dialog.setup-dlg { width: min(560px, calc(100vw - 16px)); }
+.setup h2 { margin: 4px 0 4px; }
+.setup .welcome-dots { margin: 0 0 10px; }
+.setup .field { margin-top: 12px; }
+.setup .field input { margin-top: 6px; }
+.setup-missing { color: var(--danger); min-height: 1.2em; margin: 10px 0 0; }
+.setup-nav { position: sticky; bottom: 0; background: var(--bg); padding: 10px 0 2px; margin-top: 6px; }
+.style-cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 10px; }
+.style-card { display: flex; flex-direction: column; align-items: stretch; text-align: left; padding: 6px 6px 8px; border-radius: 14px;
+  border: 2px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; cursor: pointer; }
+.style-card[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.style-card .look-view canvas, .style-card .look-view svg { width: 100%; aspect-ratio: 2 / 3; display: block; border-radius: 10px; background: #3a2618; }
+.style-card b { margin: 6px 4px 0; }
+.style-card small { margin: 0 4px; color: var(--muted); font-size: 12px; line-height: 1.3; }
+.style-card[aria-pressed="true"] b::before { content: '✓ '; color: var(--accent); }
