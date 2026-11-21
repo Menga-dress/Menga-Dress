@@ -2,7 +2,7 @@
 // proposti. Ogni capo ha la sua forma (camicia, felpa, blazer, jeans, sneakers...) e il colore del
 // capo vero, con sopra luci, ombre e pieghe che danno volume (effetto 3D) qualunque sia il colore.
 // Se manca un capo si usa quello tipico dell'occasione.
-import { PALETTE, mannequinMatch, currentGender, CUSTOM, MANNEQUIN, zoneOfCategory } from './catalog.js';
+import { PALETTE, mannequinMatch, currentGender, CUSTOM, MANNEQUIN, zoneOfCategory, findSubtype } from './catalog.js';
 
 const VW = 400;
 const VH = 600;
@@ -559,31 +559,51 @@ const PH = 960;
 // solo la variante dentro l'occasione.
 // Pose dei manichini dell'app (immagine di base) e occasioni in cui l'app le usa: servono
 // a creare un manichino tuo con un capo su una posa precisa (es. le tue sneakers in serata).
+// outer: cosa c'è nella zona giacca (formal blazer, casual giubbotto o simili, none nessuna giacca:
+// felpa, camicia aperta, vestito). noTop: la maglia non si vede.
 export const POSES = {
   uomo: [
-    { base: 'casual', label: 'Giubbotto aperto', occasions: ['tempo_libero'] },
-    { base: 'felpa', label: 'Felpa', occasions: ['tempo_libero'] },
-    { base: 'felpa-zip', label: 'Felpa con zip', occasions: ['tempo_libero'] },
-    { base: 'camicia-aperta', label: 'Camicia aperta, gambe incrociate', occasions: ['serata', 'tempo_libero'] },
-    { base: 'blazer-tshirt', label: 'Blazer e t-shirt', occasions: ['lavoro', 'serata', 'tempo_libero'] },
-    { base: 'blazer-sneakers', label: 'Blazer e sneakers', occasions: ['lavoro'] },
-    { base: 'blazer', label: 'Blazer', occasions: ['lavoro'] },
-    { base: 'blazer-lavoro', label: 'Blazer con valigetta', occasions: ['lavoro', 'evento'] },
-    { base: 'blazer-pochette', label: 'Blazer con pochette', occasions: ['evento', 'serata'] },
-    { base: 'sport', label: 'Sport', occasions: ['sport'] },
-    { base: 'viaggio', label: 'Viaggio', occasions: ['viaggio'] },
+    { base: 'casual', label: 'Giubbotto aperto', occasions: ['tempo_libero'], outer: 'casual' },
+    { base: 'felpa', label: 'Felpa', occasions: ['tempo_libero'], outer: 'none' },
+    { base: 'felpa-zip', label: 'Felpa con zip', occasions: ['tempo_libero'], outer: 'none' },
+    { base: 'camicia-aperta', label: 'Camicia aperta, gambe incrociate', occasions: ['serata', 'tempo_libero'], outer: 'none' },
+    { base: 'blazer-tshirt', label: 'Blazer e t-shirt', occasions: ['lavoro', 'serata', 'tempo_libero'], outer: 'formal' },
+    { base: 'blazer-sneakers', label: 'Blazer e sneakers', occasions: ['lavoro'], outer: 'formal' },
+    { base: 'blazer', label: 'Blazer', occasions: ['lavoro'], outer: 'formal' },
+    { base: 'blazer-lavoro', label: 'Blazer con valigetta', occasions: ['lavoro', 'evento'], outer: 'formal' },
+    { base: 'blazer-pochette', label: 'Blazer con pochette', occasions: ['evento', 'serata'], outer: 'formal' },
+    { base: 'sport', label: 'Sport', occasions: ['sport'], outer: 'casual' },
+    { base: 'viaggio', label: 'Viaggio', occasions: ['viaggio'], outer: 'casual' },
   ],
   donna: [
-    { base: 'donna-casual', label: 'Casual', occasions: ['tempo_libero'] },
-    { base: 'donna-camicia', label: 'Camicia', occasions: ['tempo_libero'] },
-    { base: 'donna-lavoro', label: 'Lavoro', occasions: ['lavoro', 'evento'] },
-    { base: 'donna-lavoro2', label: 'Lavoro 2', occasions: ['lavoro', 'evento'] },
-    { base: 'donna-elegante', label: 'Elegante', occasions: ['serata', 'evento'] },
-    { base: 'donna-vestito', label: 'Vestito', occasions: ['serata', 'evento'] },
-    { base: 'donna-sport', label: 'Sport', occasions: ['sport'] },
-    { base: 'donna-viaggio', label: 'Viaggio', occasions: ['viaggio'] },
+    { base: 'donna-casual', label: 'Casual', occasions: ['tempo_libero'], outer: 'casual' },
+    { base: 'donna-camicia', label: 'Camicia', occasions: ['tempo_libero'], outer: 'none' },
+    { base: 'donna-lavoro', label: 'Lavoro', occasions: ['lavoro', 'evento'], outer: 'formal' },
+    { base: 'donna-lavoro2', label: 'Lavoro 2', occasions: ['lavoro', 'evento'], outer: 'formal' },
+    { base: 'donna-elegante', label: 'Elegante', occasions: ['serata', 'evento'], outer: 'none' },
+    { base: 'donna-vestito', label: 'Vestito', occasions: ['serata', 'evento'], outer: 'none', dress: true },
+    { base: 'donna-sport', label: 'Sport', occasions: ['sport'], outer: 'casual' },
+    { base: 'donna-viaggio', label: 'Viaggio', occasions: ['viaggio'], outer: 'casual' },
   ],
 };
+
+// Pose adatte a un capo: una giacca solo dove c'è una giacca dello stesso genere (niente
+// impermeabile sul blazer elegante o sulla felpa), gli altri capi dove l'occasione lo permette.
+const POSE_FORMALITY = { lavoro: [3, 4], tempo_libero: [1, 3], serata: [3, 4], sport: [1, 1], evento: [4, 5], viaggio: [1, 2] };
+export function posesFor(gender, category, name) {
+  const f = findSubtype(category, name)?.formality ?? 3;
+  const okOcc = (p) => p.occasions.some((o) => { const [lo, hi] = POSE_FORMALITY[o]; return f >= lo - 1 && f <= hi + 1; });
+  return (POSES[gender] || []).filter((p) => {
+    if (category === 'outerwear') return p.outer === (f >= 3 ? 'formal' : 'casual');
+    if (category === 'dress') {
+      if (gender === 'donna') return !!p.dress;
+      return /tuta/i.test(name) ? p.base === 'sport' : p.outer === 'formal';
+    }
+    if (p.dress) return category === 'shoes' && okOcc(p);
+    if (category === 'top' && gender === 'donna' && p.base === 'donna-elegante') return f <= 3 ? false : okOcc(p);
+    return okOcc(p);
+  });
+}
 
 function choosePhoto(pieces, occasion) {
   const app = appPhoto(pieces, occasion);

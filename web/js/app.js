@@ -2,7 +2,7 @@ import * as db from './db.js';
 import { getWeather, getForecast, savedCity, setCity, forgetCity } from './weather.js';
 import { detectColors } from './colors.js';
 import { suggestOutfits, ideaName, DRESS_CODES, readInvite } from './stylist.js';
-import { lookView, garmentView, previewPhoto, forgetPhoto, POSES } from './look.js';
+import { lookView, garmentView, previewPhoto, forgetPhoto, posesFor } from './look.js';
 import { prepareMannequin, loadCustom, saveCustom, removeCustom, syncShared, isAdmin, publishShared, unpublishShared, makeDefinitive, fixedCount } from './manichini.js';
 import { analyzeGarment, isModelCached, rememberGarment, forgetGarment, learnFromWardrobe } from './riconosci.js';
 import { removeBackground } from './sfondo.js';
@@ -12,7 +12,7 @@ import {
   mannequinMatch, currentGender, CUSTOM, ZONE_CATEGORIES, zoneOfCategory,
 } from './catalog.js';
 
-const APP_VERSION = '55'; // da aumentare a ogni modifica, si vede nelle Impostazioni
+const APP_VERSION = '56'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
 
@@ -508,7 +508,8 @@ function posesBox(category, name, ref) {
   const g = currentGender();
   const z = zoneOfCategory(category);
   if (!z) return null;
-  const poses = POSES[g].filter((p) => p.base !== 'donna-vestito' || [1, 4].includes(z));
+  const poses = posesFor(g, category, name);
+  if (!poses.length) return null;
   const done = (p) => CUSTOM.some((c) => c.gender === g && c.garments?.[z] === name && c.pose === p.base);
   const n = poses.filter(done).length;
   return h('details', { class: 'poses' },
