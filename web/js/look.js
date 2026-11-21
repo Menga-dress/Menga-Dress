@@ -557,9 +557,41 @@ const PH = 960;
 // di più ai capi proposti.
 // Ogni occasione ha i suoi manichini (come nel pacchetto di Luciano); i capi proposti scelgono
 // solo la variante dentro l'occasione.
+// Pose dei manichini dell'app (immagine di base) e occasioni in cui l'app le usa: servono
+// a creare un manichino tuo con un capo su una posa precisa (es. le tue sneakers in serata).
+export const POSES = {
+  uomo: [
+    { base: 'casual', label: 'Giubbotto aperto', occasions: ['tempo_libero'] },
+    { base: 'felpa', label: 'Felpa', occasions: ['tempo_libero'] },
+    { base: 'felpa-zip', label: 'Felpa con zip', occasions: ['tempo_libero'] },
+    { base: 'camicia-aperta', label: 'Camicia aperta, gambe incrociate', occasions: ['serata', 'tempo_libero'] },
+    { base: 'blazer-tshirt', label: 'Blazer e t-shirt', occasions: ['lavoro', 'serata', 'tempo_libero'] },
+    { base: 'blazer-sneakers', label: 'Blazer e sneakers', occasions: ['lavoro'] },
+    { base: 'blazer', label: 'Blazer', occasions: ['lavoro'] },
+    { base: 'blazer-lavoro', label: 'Blazer con valigetta', occasions: ['lavoro', 'evento'] },
+    { base: 'blazer-pochette', label: 'Blazer con pochette', occasions: ['evento', 'serata'] },
+    { base: 'sport', label: 'Sport', occasions: ['sport'] },
+    { base: 'viaggio', label: 'Viaggio', occasions: ['viaggio'] },
+  ],
+  donna: [
+    { base: 'donna-casual', label: 'Casual', occasions: ['tempo_libero'] },
+    { base: 'donna-camicia', label: 'Camicia', occasions: ['tempo_libero'] },
+    { base: 'donna-lavoro', label: 'Lavoro', occasions: ['lavoro', 'evento'] },
+    { base: 'donna-lavoro2', label: 'Lavoro 2', occasions: ['lavoro', 'evento'] },
+    { base: 'donna-elegante', label: 'Elegante', occasions: ['serata', 'evento'] },
+    { base: 'donna-vestito', label: 'Vestito', occasions: ['serata', 'evento'] },
+    { base: 'donna-sport', label: 'Sport', occasions: ['sport'] },
+    { base: 'donna-viaggio', label: 'Viaggio', occasions: ['viaggio'] },
+  ],
+};
+
 function choosePhoto(pieces, occasion) {
-  const mine = chooseCustom(pieces, occasion);
-  if (mine) return mine;
+  const app = appPhoto(pieces, occasion);
+  return chooseCustom(pieces, occasion, app) || app;
+}
+
+// Manichino dell'app per i capi proposti.
+function appPhoto(pieces, occasion) {
   const sub = (cat) => String(pieces.find((p) => p.category === cat)?.subcategory || '').toLowerCase();
   const outer = sub('outerwear');
   const top = sub('top');
@@ -618,7 +650,7 @@ function choosePhoto(pieces, occasion) {
 // non hanno (o il capo per cui l'hai creato), per qualsiasi occasione: così le tue scarpe si
 // vedono anche nelle proposte per serata, sport, lavoro… Se invece ha solo tutti i capi della
 // proposta, vale solo per le sue occasioni. A parità vince quello della stessa occasione.
-function chooseCustom(pieces, occasion) {
+function chooseCustom(pieces, occasion, appBase) {
   const gender = isDonna() ? 'donna' : 'uomo';
   let best = null;
   for (const c of CUSTOM) {
@@ -633,7 +665,8 @@ function chooseCustom(pieces, occasion) {
       if (c.main === p.subcategory || !(MANNEQUIN[gender].have[p.category] || []).includes(p.subcategory)) special = true;
     }
     if (!special && !(sameOcc && score && score >= zones)) continue;
-    const rank = score + (sameOcc ? 0.5 : 0) + (special ? 1 : 0);
+    // Creato sulla stessa posa che l'app userebbe: è quello giusto.
+    const rank = score + (sameOcc ? 0.5 : 0) + (special ? 1 : 0) + (c.pose && c.pose === appBase ? 3 : 0);
     if (!best || rank > best.score) best = { score: rank, id: c.id };
   }
   return best ? `mio:${best.id}` : null;

@@ -149,7 +149,7 @@ export async function isAdmin() {
   } catch { return false; }
 }
 
-const META = ['name', 'gender', 'occasions', 'garments', 'main', 'createdAt'];
+const META = ['name', 'gender', 'occasions', 'garments', 'main', 'pose', 'createdAt'];
 
 // Pubblica (o aggiorna) un tuo manichino per tutti gli utenti.
 // extra.definitivo = true lo segna perché l'azione GitHub lo metta nel codice dell'app.
