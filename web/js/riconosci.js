@@ -24,7 +24,7 @@ function load() {
         ort.InferenceSession.create(base('../modello/immagini.onnx'), { executionProviders: ['wasm'] }),
       ]);
       try { localStorage.setItem('menga-modello', '1'); } catch { /* niente */ }
-      return { ort, pre, classes: testi.classes, colors: testi.colors, session };
+      return { ort, pre, classes: testi.classes, colors: testi.colors, others: testi.others || [], session };
     })().catch((e) => { loading = null; throw e; });
   }
   return loading;
@@ -152,11 +152,31 @@ async function nearestKnown(v, excludeId) {
   return { best, top };
 }
 
+// Quanto la foto somiglia a un capo invece che a qualcos'altro (mappa, schermata, paesaggio, cibo…):
+// probabilità tra 0 e 1, calcolata come rank() ma sommando tutti i tipi di capo.
+// Sotto GARMENT_MIN la foto non viene salvata.
+export const GARMENT_MIN = 0.4;
+function garmentProbability(classes, others, v) {
+  if (!others.length) return { p: 1, other: null }; // modello vecchio senza "non capi": nessun controllo
+  const all = [...classes.map((c) => ({ capo: true, name: c.name, e: c.e })), ...others.map((c) => ({ capo: false, name: c.name, e: c.e }))];
+  const scores = all.map((c) => dot(c.e, v));
+  const mx = Math.max(...scores);
+  let tot = 0; let capo = 0; let other = null; let otherS = -Infinity;
+  scores.forEach((s, i) => {
+    const ex = Math.exp(100 * (s - mx));
+    tot += ex;
+    if (all[i].capo) capo += ex;
+    else if (s > otherS) { otherS = s; other = all[i].name; }
+  });
+  return { p: capo / tot, other };
+}
+
 // Guarda la foto una volta sola e restituisce i tipi e i colori più probabili:
-// { types: [{ category, name, p }], colors: [{ name, p }] } con p tra 0 e 1.
+// { garment: { p, ok, other }, types: [{ category, name, p }], colors: [{ name, p }] } con p tra 0 e 1.
+// garment.ok false: la foto non sembra un capo d'abbigliamento (other: a cosa somiglia).
 // learned: il capo già salvato più simile, se lo è molto (stesso capo o quasi).
 export async function analyzeGarment(blob, top = 4, { excludeId } = {}) {
-  const { classes, colors } = await load();
+  const { classes, colors, others } = await load();
   const v = await embed(blob);
   // Somiglianza con i capi già salvati: sopra 0,85 sposta il tipo verso quello del capo simile.
   let known = { best: {}, top: null };
@@ -165,7 +185,10 @@ export async function analyzeGarment(blob, top = 4, { excludeId } = {}) {
     const sim = known.best[`${c.category}|${c.name}`];
     return sim > 0.85 ? { ...c, boost: (sim - 0.85) * 2 } : c;
   });
+  // Somiglia molto a un capo che hai già salvato: è un capo di sicuro.
+  const g = known.top && known.top.sim > 0.85 ? { p: 1, other: null } : garmentProbability(classes, others, v);
   return {
+    garment: { p: g.p, other: g.other, ok: g.p >= GARMENT_MIN },
     types: rank(boosted, v).slice(0, top),
     colors: colors ? rank(colors, v).slice(0, 3).map(({ name, p }) => ({ name, p })) : [],
     emb: v,

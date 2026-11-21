@@ -1,0 +1,16 @@
+{
+  "_nota": "Cose che NON sono capi d'abbigliamento: se una foto somiglia più a queste che ai capi di etichette.json, l'app non la salva. Rigenera web/modello/testi.json con il workflow 'Modello riconoscimento capi'.",
+  "mappa": ["a map", "a city map", "a satellite view of a city", "an aerial photo of a city"],
+  "schermata": ["a screenshot of a phone app", "a screenshot of a website", "an infographic with charts", "a computer screen"],
+  "documento": ["a page of printed text", "a document", "a receipt", "a book"],
+  "paesaggio": ["a landscape", "a beach and the sea", "mountains", "a sunset sky"],
+  "città": ["a city street", "a building", "a city skyline"],
+  "stanza": ["a living room", "a kitchen", "furniture"],
+  "veicolo": ["a car", "a motorbike", "a bicycle"],
+  "cibo": ["food on a plate", "a pizza", "a drink in a glass"],
+  "animale": ["a dog", "a cat", "a bird"],
+  "volto": ["a close-up of a human face", "a baby"],
+  "oggetto": ["a smartphone", "a laptop", "a television", "a cup", "a bottle", "a toy"],
+  "pianta": ["a plant", "flowers", "a tree"],
+  "grafica": ["a logo", "a cartoon drawing", "a meme with text"]
+}

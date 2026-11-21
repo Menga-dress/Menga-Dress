@@ -19,6 +19,10 @@ const FILE = { fp32: 'vision_model.onnx', fp16: 'vision_model_fp16.onnx', q8: 'v
 
 const labels = JSON.parse(fs.readFileSync('tools/modello/etichette.json', 'utf8'));
 delete labels._nota;
+// Cose che non sono capi: servono a rifiutare le foto sbagliate (mappe, schermate, paesaggi…).
+const nonCapi = JSON.parse(fs.readFileSync('tools/modello/non-capi.json', 'utf8'));
+delete nonCapi._nota;
+const OTHER_TEMPLATES = ['a photo of {}.', '{}.', 'an image of {}.'];
 const TEMPLATES = ['a photo of {}.', 'a product photo of {}.', '{} laid flat on a bed.', '{} on a hanger.', 'a photo of {} worn by a person.'];
 const norm = (v) => { const n = Math.hypot(...v); return v.map((x) => x / n); };
 
@@ -74,6 +78,23 @@ for (const [term, ok] of Object.entries(TESTS)) {
 }
 console.log('foto di prova:', images.length);
 
+// Foto che NON sono capi: per scegliere la soglia oltre la quale l'app rifiuta la foto.
+const NON_TESTS = ['city map', 'satellite image city', 'smartphone screenshot', 'mountain landscape', 'dog', 'pizza',
+  'car automobile', 'portrait face', 'building facade', 'laptop computer', 'printed document', 'flowers', 'cat', 'kitchen interior'];
+const nonImages = [];
+for (const term of NON_TESTS) {
+  const api = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(`filetype:bitmap ${term}`)}&gsrnamespace=6&gsrlimit=3&prop=imageinfo&iiprop=url&iiurlwidth=400&format=json`;
+  try {
+    const res = await (await fetch(api, { headers: UA })).json();
+    for (const p of Object.values(res.query?.pages || {})) {
+      const url = p.imageinfo?.[0]?.thumburl;
+      if (!url) continue;
+      nonImages.push({ term, title: p.title, img: await RawImage.fromBlob(await (await fetch(url, { headers: UA })).blob()) });
+    }
+  } catch (e) { console.log('foto non scaricata', term, e.message); }
+}
+console.log('foto di prova non capi:', nonImages.length);
+
 let best = null;
 for (const cand of CANDIDATES) {
   try {
@@ -108,5 +129,36 @@ for (const t of images) {
   const sc = colors.map((c) => ({ n: c.name, s: c.e.reduce((a, x, i) => a + x * v[i], 0) })).sort((a, b) => b.s - a.s);
   console.log(`  colore [${t.term}] ${t.title.slice(5, 60)} → ${sc.slice(0, 3).map((x) => `${x.n} ${x.s.toFixed(3)}`).join(' | ')}`);
 }
-fs.writeFileSync(path.join(OUT, 'testi.json'), JSON.stringify({ model: best.id, dtype: best.dtype, classes: best.classes, colors }));
+const others = (await textClasses(best.id, nonCapi, OTHER_TEMPLATES)).map(({ name, e }) => ({ name, e }));
+// Probabilità che la foto sia un capo: come fa l'app (riconosci.js), scala 100 su capi + non capi.
+const pCapo = (v) => {
+  const all = [...best.classes.map((c) => ({ capo: true, c })), ...others.map((c) => ({ capo: false, c }))]
+    .map((x) => ({ ...x, s: x.c.e.reduce((a, y, i) => a + y * v[i], 0) }));
+  const mx = Math.max(...all.map((x) => x.s));
+  let tot = 0; let capo = 0; let top = null;
+  for (const x of all) {
+    const ex = Math.exp(100 * (x.s - mx));
+    tot += ex; if (x.capo) capo += ex;
+    if (!top || x.s > top.s) top = x;
+  }
+  return { p: capo / tot, top: top.c.name, max: mx };
+};
+const garmentP = [];
+for (const t of images) {
+  const { image_embeds } = await vision(await processor(t.img));
+  const r = pCapo(norm(Array.from(image_embeds.data)));
+  garmentP.push(r.p);
+  console.log(`  CAPO [${t.term}] ${t.title.slice(5, 50)} → capo ${(r.p * 100).toFixed(1)}% (${r.top}, ${r.max.toFixed(3)})`);
+}
+const otherP = [];
+for (const t of nonImages) {
+  const { image_embeds } = await vision(await processor(t.img));
+  const r = pCapo(norm(Array.from(image_embeds.data)));
+  otherP.push(r.p);
+  console.log(`  NON CAPO [${t.term}] ${t.title.slice(5, 50)} → capo ${(r.p * 100).toFixed(1)}% (${r.top}, ${r.max.toFixed(3)})`);
+}
+for (const th of [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7]) {
+  console.log(`SOGLIA ${th}: capi rifiutati ${garmentP.filter((p) => p < th).length}/${garmentP.length}, non capi accettati ${otherP.filter((p) => p >= th).length}/${otherP.length}`);
+}
+fs.writeFileSync(path.join(OUT, 'testi.json'), JSON.stringify({ model: best.id, dtype: best.dtype, classes: best.classes, colors, others }));
 fs.copyFileSync(path.join(env.cacheDir, best.id, 'preprocessor_config.json'), path.join(OUT, 'preprocessore.json'));
