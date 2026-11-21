@@ -761,8 +761,8 @@ function photoColors(pieces, occasion, base) {
   const outer = get('outerwear') || (suit ? dress : null);
   // Felpa aperta, camicia aperta e jogger: senza giacca il capo aperto è la maglia proposta,
   // e sotto c'è una t-shirt bianca (blu scuro se la maglia è già chiara).
-  const layered = !outer && ['felpa-zip', 'camicia-aperta', 'sport', 'viaggio', 'casual',
-    'donna-casual', 'donna-camicia', 'donna-sport', 'donna-viaggio'].includes(base);
+  const layered = !outer && ['felpa-zip', 'camicia-aperta', 'sport', 'casual',
+    'donna-casual', 'donna-camicia', 'donna-sport'].includes(base);
   const tee = colorOf(lum(top) > 0.8 ? 'blu navy' : 'bianco');
   // T-shirt, polo, top o maglia sportiva non si portano aperti: restano la maglia sotto,
   // col loro colore, e sopra c'è una camicia aperta neutra che stacca.
@@ -776,6 +776,12 @@ function photoColors(pieces, occasion, base) {
   if (!jacket && /^blazer|^donna-lavoro/.test(base)) {
     jacket = colorOf(JACKET[occasion] || 'blu navy');
     if (Math.abs(lum(jacket) - lum(top)) < 0.12) jacket = colorOf('grigio');
+  }
+  // Viaggio: la giacca a vento non è la maglia aperta. Senza giacca proposta ne mette una
+  // neutra che stacca dalla maglia (nera, o grigia se la maglia è scura).
+  if (!jacket && /viaggio/.test(base)) {
+    jacket = colorOf(lum(top) < 0.3 ? 'grigio' : 'nero');
+    if (Math.abs(lum(jacket) - lum(top)) < 0.12) jacket = colorOf('blu navy');
   }
   // Vestito: il rosso dell'immagine è l'abito.
   if (base === 'donna-vestito') {
