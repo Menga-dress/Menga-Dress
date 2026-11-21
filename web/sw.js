@@ -3,7 +3,7 @@ const CACHE = 'dress-v53';
 
 // Modello per riconoscere i capi (circa 23 MB): scaricato solo quando serve e tenuto anche
 // dopo gli aggiornamenti dell'app. Se cambia il modello, cambiare questo nome.
-const MODEL_CACHE = 'menga-modello-v2';
+const MODEL_CACHE = 'menga-modello-v3';
 const SHELL = [
   './',
   './index.html',
