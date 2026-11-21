@@ -47,5 +47,40 @@
   "main": "Sneakers",
   "pose": "viaggio",
   "createdAt": "2026-11-21T13:55:37.048Z"
+ },
+ {
+  "id": "a1164674-9287-4efd-9046-cbe1a26c956f",
+  "name": "Mocassini e pantaloni eleganti",
+  "gender": "uomo",
+  "occasions": [
+   "tempo_libero"
+  ],
+  "garments": {
+   "1": "Tuta",
+   "2": "Maglia sportiva",
+   "3": "Pantaloni eleganti",
+   "4": "Mocassini"
+  },
+  "main": "Mocassini",
+  "pose": null,
+  "createdAt": "2026-11-21T21:02:16.143Z"
+ },
+ {
+  "id": "50386413-dd04-49b4-b3df-e54a61a9b1a1",
+  "name": "Mocassini e pantaloni eleganti",
+  "gender": "uomo",
+  "occasions": [
+   "lavoro",
+   "evento"
+  ],
+  "garments": {
+   "1": "Completo",
+   "2": "Cardigan",
+   "3": "Pantaloni eleganti",
+   "4": "Mocassini"
+  },
+  "main": "Mocassini",
+  "pose": "blazer-lavoro",
+  "createdAt": "2026-11-21T21:03:36.801Z"
  }
 ]
