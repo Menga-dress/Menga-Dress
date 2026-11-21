@@ -12,7 +12,7 @@ import {
   mannequinMatch, currentGender, CUSTOM, ZONE_CATEGORIES, zoneOfCategory,
 } from './catalog.js';
 
-const APP_VERSION = '57'; // da aumentare a ogni modifica, si vede nelle Impostazioni
+const APP_VERSION = '58'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
 
@@ -1994,6 +1994,7 @@ async function openSettings() {
       accountSection(close),
       h('h2', {}, 'Manichini'),
       mannequinSection(),
+      statsSection(),
       h('h2', {}, 'Tema e manichino'),
       chipGroup(THEMES, document.documentElement.dataset.theme || 'uomo', { onChange: setTheme }),
       h('h2', {}, 'Guida'),
@@ -2001,6 +2002,58 @@ async function openSettings() {
       h('p', { class: 'hint' }, `Versione ${APP_VERSION}`),
     );
   });
+}
+
+// ---------- statistiche dell'app (solo amministratore) ----------
+// Iscritti e quanto usano l'app, dalla funzione admin_stats di Supabase (supabase/statistiche.sql).
+// Si vedono solo gli utenti con un account: chi non accede tiene tutto sul telefono.
+function statsSection() {
+  const box = h('div', { hidden: true });
+  const body = h('div');
+  const fmtDay = (iso) => (iso ? new Date(iso).toLocaleDateString('it-IT', { day: 'numeric', month: 'short' }) : '—');
+  const load = async () => {
+    body.replaceChildren(h('div', { class: 'status' }, h('span', { class: 'spinner' }), 'Carico le statistiche…'));
+    try {
+      const sb = await sync.client();
+      const { data, error } = await sb.rpc('admin_stats');
+      if (error) throw error;
+      const rows = data || [];
+      const DAY = 86400000;
+      const since = (iso, days) => iso && Date.now() - new Date(iso).getTime() < days * DAY;
+      const active7 = rows.filter((r) => since(r.ultima_modifica, 7) || since(r.ultimo_accesso, 7)).length;
+      const active30 = rows.filter((r) => since(r.ultima_modifica, 30) || since(r.ultimo_accesso, 30)).length;
+      const capi = rows.reduce((a, r) => a + Number(r.capi || 0), 0);
+      const outfit = rows.reduce((a, r) => a + Number(r.outfit || 0), 0);
+      const tile = (n, label) => h('div', {}, h('b', {}, String(n)), h('small', {}, label));
+      body.replaceChildren(
+        h('div', { class: 'profile-stats stats-grid' },
+          tile(rows.length, 'iscritti'), tile(active7, 'attivi 7 giorni'), tile(active30, 'attivi 30 giorni'),
+          tile(capi, 'capi caricati'), tile(outfit, 'outfit salvati')),
+        h('div', { class: 'stats-table' },
+          h('div', { class: 'stats-row head' }, h('span', {}, 'Utente'), h('span', {}, 'Capi'), h('span', {}, 'Outfit'), h('span', {}, 'Ultimo uso')),
+          rows.map((r) => h('div', { class: 'stats-row' },
+            h('span', { title: `Iscritto il ${fmtDay(r.iscritto)}` }, r.email || '—'),
+            h('span', {}, String(r.capi ?? 0)),
+            h('span', {}, `${r.outfit ?? 0}${r.indossati ? ` (${r.indossati} ✓)` : ''}`),
+            h('span', {}, fmtDay(r.ultima_modifica || r.ultimo_accesso))))),
+        h('p', { class: 'hint' }, 'Contano solo gli utenti con un account. Chi usa l\'app senza accedere tiene tutto sul suo telefono e qui non si vede. ✓ = outfit indossati.'),
+        h('button', { class: 'link-btn', type: 'button', onclick: load }, 'Aggiorna'));
+    } catch (e) {
+      console.warn('statistiche', e);
+      const missing = /admin_stats|function|schema cache/i.test(e?.message || '');
+      body.replaceChildren(h('p', { class: 'hint' }, missing
+        ? 'Manca un passo su Supabase: apri il SQL Editor, incolla il contenuto di supabase/statistiche.sql (nel codice dell\'app) e premi Run. Basta una volta.'
+        : `Non riesco a leggere le statistiche: ${sync.friendlyError(e)}`),
+      h('button', { class: 'link-btn', type: 'button', onclick: load }, 'Riprova'));
+    }
+  };
+  isAdmin().then((v) => {
+    if (!v) return;
+    box.hidden = false;
+    box.replaceChildren(h('h2', {}, 'Statistiche dell\'app'), body);
+    load();
+  });
+  return box;
 }
 
 // ---------- account e sincronizzazione ----------
