@@ -12,7 +12,7 @@ import {
   mannequinMatch, currentGender, CUSTOM, ZONE_CATEGORIES, zoneOfCategory,
 } from './catalog.js';
 
-const APP_VERSION = '53'; // da aumentare a ogni modifica, si vede nelle Impostazioni
+const APP_VERSION = '54'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
 
@@ -2316,7 +2316,7 @@ async function profileSetup({ force = false } = {}) {
               b.setAttribute('aria-pressed', String(d.styles.includes(key)));
               check();
             } },
-          lookView(look[sex()], look.occ),
+          lookView(look[sex()], look.occ, sex()),
           h('b', {}, label), h('small', {}, STYLE_HINTS[key]));
           return b;
         }))],
@@ -2357,6 +2357,8 @@ async function profileSetup({ force = false } = {}) {
       };
       await db.setKV('profile', out).catch(() => {});
       profileGender = d.gender;
+      // Manichini e tema come lo stile scelto (poi si cambiano col tasto ♂/♀ in alto).
+      if (d.gender === 'uomo' || d.gender === 'donna') { applyTheme(d.gender); updateThemeBtn(); }
       // Outfit parte dall'occasione più frequente, se non ne hai già scelta una.
       let chosen = true;
       try { chosen = !!localStorage.getItem('menga-outfit-scelte'); } catch { /* niente */ }

@@ -652,7 +652,10 @@ function customColors(pieces, occasion) {
 }
 
 // Tema chiaro (Impostazioni): manichino donna.
+// Si può chiedere un manichino preciso (es. questionario del profilo) senza cambiare il tema.
+let forcedGender = null;
 function isDonna() {
+  if (forcedGender) return forcedGender === 'donna';
   return document.documentElement.dataset.theme === 'donna';
 }
 
@@ -833,7 +836,8 @@ function paintPhoto(canvas, { base, zone }, colors) {
 }
 
 // Anteprima: manichino fotografico ricolorato; se l'immagine non si carica resta il disegno SVG.
-export function lookView(pieces, occasion) {
+// gender ('uomo' o 'donna'), facoltativo: manichino da usare al posto di quello del tema.
+export function lookView(pieces, occasion, gender) {
   const box = document.createElement('div');
   box.className = 'look-view';
   const canvas = document.createElement('canvas');
@@ -841,7 +845,9 @@ export function lookView(pieces, occasion) {
   canvas.setAttribute('role', 'img');
   canvas.setAttribute('aria-label', 'Anteprima dell\'outfit sul manichino');
   box.append(canvas);
-  const base = choosePhoto(pieces, occasion);
+  forcedGender = gender === 'uomo' || gender === 'donna' ? gender : null;
+  let base;
+  try { base = choosePhoto(pieces, occasion); } finally { forcedGender = null; }
   loadPhoto(base)
     .then((px) => paintPhoto(canvas, px, photoColors(pieces, occasion, base)))
     .catch(() => box.replaceChildren(lookSvg(pieces, occasion)));
