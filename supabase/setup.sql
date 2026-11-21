@@ -69,3 +69,5 @@ create policy "manichini file: scrive l'amministratore" on storage.objects
 -- 5) Diventa amministratore: togli i due trattini all'inizio della riga qui sotto,
 --    scrivi la TUA email al posto di quella d'esempio e premi Run (basta una volta).
 -- insert into public.admins select id from auth.users where email = 'la-tua-email@esempio.it' on conflict do nothing;
+
+-- 6) Statistiche degli utenti per l'amministratore: vedi supabase/statistiche.sql.
