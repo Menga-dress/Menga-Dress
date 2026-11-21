@@ -614,13 +614,16 @@ function choosePhoto(pieces, occasion) {
   }
 }
 
-// Manichino creato da te: si usa se è per questa occasione e mostra un capo della proposta
-// che i manichini dell'app non hanno (o tutti i capi della proposta).
+// Manichino creato da te: si usa se mostra un capo della proposta che i manichini dell'app
+// non hanno (o il capo per cui l'hai creato), per qualsiasi occasione: così le tue scarpe si
+// vedono anche nelle proposte per serata, sport, lavoro… Se invece ha solo tutti i capi della
+// proposta, vale solo per le sue occasioni. A parità vince quello della stessa occasione.
 function chooseCustom(pieces, occasion) {
   const gender = isDonna() ? 'donna' : 'uomo';
   let best = null;
   for (const c of CUSTOM) {
-    if (c.gender !== gender || !(c.occasions || []).includes(occasion)) continue;
+    if (c.gender !== gender) continue;
+    const sameOcc = (c.occasions || []).includes(occasion);
     let score = 0; let special = false; let zones = 0;
     for (const z of [1, 2, 3, 4]) if (c.garments?.[z]) zones++;
     for (const p of pieces) {
@@ -629,7 +632,9 @@ function chooseCustom(pieces, occasion) {
       score++;
       if (c.main === p.subcategory || !(MANNEQUIN[gender].have[p.category] || []).includes(p.subcategory)) special = true;
     }
-    if ((special || (score && score >= zones)) && (!best || score > best.score)) best = { score, id: c.id };
+    if (!special && !(sameOcc && score && score >= zones)) continue;
+    const rank = score + (sameOcc ? 0.5 : 0) + (special ? 1 : 0);
+    if (!best || rank > best.score) best = { score: rank, id: c.id };
   }
   return best ? `mio:${best.id}` : null;
 }
