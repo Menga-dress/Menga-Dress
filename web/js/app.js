@@ -12,7 +12,7 @@ import {
   mannequinMatch, currentGender, CUSTOM, ZONE_CATEGORIES, zoneOfCategory,
 } from './catalog.js';
 
-const APP_VERSION = '63'; // da aumentare a ogni modifica, si vede nelle Impostazioni
+const APP_VERSION = '65'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
 
@@ -1097,8 +1097,7 @@ function editItem(item, { isNew = false } = {}) {
       bgSlot,
       status,
       guessSlot,
-      isNew ? null : h('p', { class: 'stat' },
-        item.timesWorn ? `Indossato ${item.timesWorn} ${item.timesWorn === 1 ? 'volta' : 'volte'}, l'ultima il ${new Date(item.lastWorn).toLocaleDateString('it-IT')}` : 'Mai indossato finora'),
+      isNew ? null : wornTodayRow(item),
       h('div', { class: 'field' }, h('span', {}, 'Categoria'), categoryChips),
       typesSlot,
       field('Nome del capo', f.subcategory),
@@ -1643,6 +1642,64 @@ async function wearOutfit(record, pieces) {
   record.date = now;
   if (!record.rating) record.rating = 'up';
   await db.put('outfits', record);
+}
+
+// Il capo nel diario di oggi: tutti i capi segnati lo stesso giorno finiscono nello stesso outfit.
+async function todayWornOutfit() {
+  const k = todayKey();
+  const list = (await db.getAll('outfits')).filter((o) => o.worn && outfitDay(o) === k);
+  return list.find((o) => o.manual) || list[0] || null;
+}
+
+// Riga nei dettagli del capo: quante volte l'hai messo e il tasto "Lo indosso oggi" (ritocco = annulla).
+function wornTodayRow(item) {
+  const stat = h('p', { class: 'stat' });
+  const btn = h('button', { type: 'button', class: 'btn primary wear-today' });
+  let wornToday = false;
+  const paint = () => {
+    stat.textContent = item.timesWorn
+      ? `Indossato ${item.timesWorn} ${item.timesWorn === 1 ? 'volta' : 'volte'}, l'ultima il ${new Date(item.lastWorn).toLocaleDateString('it-IT')}`
+      : 'Mai indossato finora';
+    btn.textContent = wornToday ? '✓ Lo indossi oggi' : '👕 Lo indosso oggi';
+    btn.classList.toggle('on', wornToday);
+    btn.setAttribute('aria-pressed', String(wornToday));
+  };
+  todayWornOutfit().then((o) => { wornToday = !!o?.itemIds?.includes(item.id); paint(); }).catch(() => {});
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    try {
+      const now = new Date().toISOString();
+      let o = await todayWornOutfit();
+      if (!wornToday) {
+        if (!o) {
+          o = { id: db.newId(), date: now, title: 'Indossati oggi', reason: '', itemIds: [], mood: null, occasion: null, dressCode: null, weather: null, rating: null, worn: true, manual: true };
+        }
+        if (!o.itemIds.includes(item.id)) o.itemIds.push(item.id);
+        await db.put('outfits', o);
+        item.timesWorn = (item.timesWorn || 0) + 1;
+        item.lastWorn = now;
+        await db.put('items', item);
+        wornToday = true;
+        toast('Segnato nel diario di oggi');
+      } else {
+        if (o) {
+          o.itemIds = (o.itemIds || []).filter((id) => id !== item.id);
+          if (!o.itemIds.length && o.manual) await db.remove('outfits', o.id);
+          else await db.put('outfits', o);
+        }
+        item.timesWorn = Math.max(0, (item.timesWorn || 0) - 1);
+        if (!item.timesWorn) item.lastWorn = null;
+        await db.put('items', item);
+        wornToday = false;
+        toast('Tolto dal diario di oggi');
+      }
+      paint();
+    } finally {
+      btn.disabled = false;
+    }
+  });
+  paint();
+  return h('div', { class: 'wear-row' }, stat, btn);
 }
 
 // Pianifica un giorno: scegli occasione e umore, l'app propone 3 outfit col meteo di quel giorno.
