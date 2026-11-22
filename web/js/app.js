@@ -12,7 +12,7 @@ import {
   mannequinMatch, currentGender, CUSTOM, ZONE_CATEGORIES, zoneOfCategory,
 } from './catalog.js';
 
-const APP_VERSION = '60'; // da aumentare a ogni modifica, si vede nelle Impostazioni
+const APP_VERSION = '61'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
 
@@ -1933,8 +1933,7 @@ async function renderProfile() {
 
 // ---------- Impostazioni ----------
 
-const THEMES = { uomo: 'Uomo', donna: 'Donna' };
-const PALETTES = { '': 'Come il profilo', unisex: 'Unisex · nero e oro' };
+const THEMES = { uomo: '♂ Uomo · navy e oro', donna: '♀ Donna · champagne e oro rosa', unisex: '⚥ Unisex · nero, bianco e oro' };
 
 const currentPalette = () => document.documentElement.dataset.palette || '';
 
@@ -1957,23 +1956,37 @@ function setPalette(p) {
   try { localStorage.setItem('menga-palette', p); } catch (e) { /* resta per questa sessione */ }
 }
 
+// Stile dell'app: uomo, donna o unisex. Unisex cambia solo i colori (nero, bianco e oro):
+// capi e manichino restano quelli del tuo profilo (uomo se il profilo è "Entrambi").
+const currentMode = () => (currentPalette() === 'unisex' ? 'unisex' : document.documentElement.dataset.theme === 'donna' ? 'donna' : 'uomo');
+
 function setTheme(t) {
-  applyTheme(t);
+  if (t === 'unisex') {
+    setPalette('unisex');
+    applyTheme(profileGender === 'donna' ? 'donna' : 'uomo');
+  } else {
+    setPalette('');
+    applyTheme(t);
+  }
+  updateThemeBtn();
   route(); // ridisegna l'anteprima con il manichino giusto
 }
 
-// Tasto in alto: passa da uomo a donna e viceversa.
+// Tasto in alto: gira tra Uomo, Donna e Unisex.
+const NEXT_MODE = { uomo: 'donna', donna: 'unisex', unisex: 'uomo' };
+const MODE_NAME = { uomo: 'Stile uomo', donna: 'Stile donna', unisex: 'Stile unisex' };
 const themeBtn = document.getElementById('theme-btn');
 function updateThemeBtn() {
-  const donna = document.documentElement.dataset.theme === 'donna';
-  themeBtn.setAttribute('aria-label', donna ? 'Passa alla sezione maschile' : 'Passa alla sezione femminile');
-  themeBtn.title = donna ? 'Donna' : 'Uomo';
+  const m = currentMode();
+  themeBtn.dataset.mode = m;
+  themeBtn.setAttribute('aria-label', `${MODE_NAME[m]}: tocca per passare a ${MODE_NAME[NEXT_MODE[m]].toLowerCase()}`);
+  themeBtn.title = MODE_NAME[m];
 }
 updateThemeBtn();
 themeBtn.addEventListener('click', () => {
-  const t = document.documentElement.dataset.theme === 'donna' ? 'uomo' : 'donna';
+  const t = NEXT_MODE[currentMode()];
   setTheme(t);
-  toast(t === 'donna' ? 'Sezione femminile' : 'Sezione maschile');
+  toast(MODE_NAME[t]);
 });
 
 async function openSettings() {
@@ -2018,11 +2031,9 @@ async function openSettings() {
       h('h2', {}, 'Manichini'),
       mannequinSection(),
       statsSection(),
-      h('h2', {}, 'Profilo e manichino'),
-      chipGroup(THEMES, document.documentElement.dataset.theme || 'uomo', { onChange: setTheme }),
-      h('h2', {}, 'Colori dell\'app'),
-      h('p', { class: 'hint' }, 'Uomo: navy e oro satinato. Donna: champagne e oro rosa. Unisex: nero, bianco e oro, per tutti.'),
-      chipGroup(PALETTES, currentPalette(), { onChange: setPalette }),
+      h('h2', {}, 'Stile dell\'app'),
+      h('p', { class: 'hint' }, 'Lo cambi anche con il tasto in alto a destra. Unisex cambia solo i colori: capi e manichino restano quelli del tuo profilo.'),
+      chipGroup(THEMES, currentMode(), { onChange: setTheme }),
       h('h2', {}, 'Guida'),
       h('button', { class: 'btn block', type: 'button', onclick: () => { close(); welcome(true); } }, 'Rivedi la guida'),
       h('p', { class: 'hint' }, `Versione ${APP_VERSION}`),
