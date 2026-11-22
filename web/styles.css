@@ -1,13 +1,13 @@
 :root {
-  /* Tema Uomo: navy, oro satinato, acciaio scuro */
-  --bg: #0D1B2A;
-  --surface: #14263a;
-  --ink: #eef2f6;
-  --muted: #9aa9ba;
-  --line: #2a3c50;
-  --accent: #c9a45c;
-  --accent-ink: #0D1B2A;
-  --accent-soft: #2b3440;
+  /* Tema Uomo: antracite e rame */
+  --bg: #1c1d1f;
+  --surface: #27282b;
+  --ink: #f1eeeb;
+  --muted: #a59e98;
+  --line: #3a3a3d;
+  --accent: #c87a4f;
+  --accent-ink: #ffffff;
+  --accent-soft: #3d2f28;
   --danger: #f2b8b5;
   --radius: 14px;
   --tabbar-h: 64px;
