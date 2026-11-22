@@ -82,5 +82,39 @@
   "main": "Mocassini",
   "pose": "blazer-lavoro",
   "createdAt": "2026-11-21T21:03:36.801Z"
+ },
+ {
+  "id": "9ac828b7-e6d2-4272-883d-b6461e66025b",
+  "name": "Maglione e pantaloni eleganti",
+  "gender": "uomo",
+  "occasions": [
+   "tempo_libero"
+  ],
+  "garments": {
+   "1": null,
+   "2": "Maglione",
+   "3": "Pantaloni eleganti",
+   "4": "Sneakers"
+  },
+  "main": "Maglione",
+  "pose": null,
+  "createdAt": "2026-11-22T14:23:13.024Z"
+ },
+ {
+  "id": "486ba874-1969-404e-8874-fb8fca3b8b0a",
+  "name": "Stivaletti e pantaloni sportivi",
+  "gender": "uomo",
+  "occasions": [
+   "tempo_libero"
+  ],
+  "garments": {
+   "1": "Tuta",
+   "2": "Maglia sportiva",
+   "3": "Pantaloni sportivi",
+   "4": "Stivaletti"
+  },
+  "main": "Stivaletti",
+  "pose": null,
+  "createdAt": "2026-11-22T14:32:58.479Z"
  }
 ]
