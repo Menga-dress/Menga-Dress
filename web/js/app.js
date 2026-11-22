@@ -12,7 +12,7 @@ import {
   mannequinMatch, currentGender, CUSTOM, ZONE_CATEGORIES, zoneOfCategory,
 } from './catalog.js';
 
-const APP_VERSION = '61'; // da aumentare a ogni modifica, si vede nelle Impostazioni
+const APP_VERSION = '62'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
 
@@ -1933,13 +1933,13 @@ async function renderProfile() {
 
 // ---------- Impostazioni ----------
 
-const THEMES = { uomo: '♂ Uomo · navy e oro', donna: '♀ Donna · champagne e oro rosa', unisex: '⚥ Unisex · nero, bianco e oro' };
+const THEMES = { uomo: '♂ Uomo · antracite e rame', donna: '♀ Donna · champagne e oro rosa', unisex: '⚥ Unisex · nero, bianco e oro' };
 
 const currentPalette = () => document.documentElement.dataset.palette || '';
 
 function paintThemeColor() {
   const t = document.documentElement.dataset.theme;
-  document.querySelector('meta[name="theme-color"]').content = currentPalette() === 'unisex' ? '#0b0b0b' : t === 'donna' ? '#f4e9da' : '#0D1B2A';
+  document.querySelector('meta[name="theme-color"]').content = currentPalette() === 'unisex' ? '#0b0b0b' : t === 'donna' ? '#f4e9da' : '#1c1d1f';
 }
 
 function applyTheme(t) {
@@ -1949,7 +1949,7 @@ function applyTheme(t) {
   updateThemeBtn();
 }
 
-// Colori dell'app: seguono il profilo (Uomo navy e oro, Donna champagne e oro rosa) o Unisex.
+// Colori dell'app: seguono il profilo (Uomo antracite e rame, Donna champagne e oro rosa) o Unisex.
 function setPalette(p) {
   if (p) document.documentElement.dataset.palette = p; else delete document.documentElement.dataset.palette;
   paintThemeColor();

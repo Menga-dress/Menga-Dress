@@ -7,5 +7,5 @@
   const r = document.documentElement;
   r.dataset.theme = t;
   if (p === 'unisex') r.dataset.palette = 'unisex';
-  document.querySelector('meta[name="theme-color"]').content = p === 'unisex' ? '#0b0b0b' : t === 'donna' ? '#f4e9da' : '#0D1B2A';
+  document.querySelector('meta[name="theme-color"]').content = p === 'unisex' ? '#0b0b0b' : t === 'donna' ? '#f4e9da' : '#1c1d1f';
 })();
