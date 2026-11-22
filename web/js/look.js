@@ -631,8 +631,9 @@ function appPhoto(pieces, occasion) {
     const gown = dress && !/completo|tuta/.test(dress);
     switch (occasion) {
       case 'lavoro': return pick(['donna-lavoro', 'donna-lavoro2']);
-      case 'evento': return gown ? 'donna-vestito' : blazer ? 'donna-lavoro2' : 'donna-elegante';
-      case 'serata': return gown || !top ? 'donna-vestito' : 'donna-elegante';
+      // donna-elegante non ha la giacca: con una giacca proposta si usa un manichino che ce l'ha.
+      case 'evento': return gown ? 'donna-vestito' : blazer || outer ? 'donna-lavoro2' : 'donna-elegante';
+      case 'serata': return gown || !top ? 'donna-vestito' : outer ? 'donna-lavoro2' : 'donna-elegante';
       case 'sport': return 'donna-sport';
       case 'viaggio': return 'donna-viaggio';
       default:
@@ -675,6 +676,9 @@ function chooseCustom(pieces, occasion, appBase) {
   let best = null;
   for (const c of CUSTOM) {
     if (c.gender !== gender) continue;
+    // Un manichino senza giacca non va bene se la proposta ha la giacca (o il blazer chiesto
+    // dal dress code) o un abito: la giacca sparirebbe dall'immagine.
+    if (!c.garments?.[1] && pieces.some((p) => zoneOfCategory(p.category) === 1)) continue;
     const sameOcc = (c.occasions || []).includes(occasion);
     let score = 0; let special = false; let zones = 0;
     for (const z of [1, 2, 3, 4]) if (c.garments?.[z]) zones++;
