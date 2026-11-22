@@ -1,8 +1,11 @@
-// Tema scelto nelle Impostazioni: "uomo" (scuro) o "donna" (chiaro avana). Caricato subito
+// Tema scelto nelle Impostazioni: "uomo" (navy e oro) o "donna" (champagne e oro rosa), più
+// la palette "unisex" (nero, bianco, oro) che vale per entrambi. Caricato subito
 // nell'<head> così la pagina non lampeggia con l'altro tema.
 (function () {
-  let t = 'uomo';
-  try { t = localStorage.getItem('menga-tema') || 'uomo'; } catch (e) { /* niente memoria: tema scuro */ }
-  document.documentElement.dataset.theme = t;
-  document.querySelector('meta[name="theme-color"]').content = t === 'donna' ? '#e6d5b8' : '#1f1d1a';
+  let t = 'uomo', p = '';
+  try { t = localStorage.getItem('menga-tema') || 'uomo'; p = localStorage.getItem('menga-palette') || ''; } catch (e) { /* niente memoria: tema uomo */ }
+  const r = document.documentElement;
+  r.dataset.theme = t;
+  if (p === 'unisex') r.dataset.palette = 'unisex';
+  document.querySelector('meta[name="theme-color"]').content = p === 'unisex' ? '#0b0b0b' : t === 'donna' ? '#f4e9da' : '#0D1B2A';
 })();

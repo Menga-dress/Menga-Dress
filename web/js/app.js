@@ -12,9 +12,17 @@ import {
   mannequinMatch, currentGender, CUSTOM, ZONE_CATEGORIES, zoneOfCategory,
 } from './catalog.js';
 
-const APP_VERSION = '58'; // da aumentare a ogni modifica, si vede nelle Impostazioni
+const APP_VERSION = '60'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
+
+// Logo Menga: gruccia geometrica con la stellina, nel colore d'accento del tema.
+const HANGER_SVG = '<svg viewBox="80 100 352 270" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"><path d="M226 158a30 30 0 1 1 30 30v26"/><path d="M256 214L104 330q-16 14 6 20h292q22-6 6-20z"/></g><path fill="currentColor" d="M256 248q4 30 30 34q-26 4-30 34q-4-30-30-34q26-4 30-34z"/></svg>';
+function brandLogo() {
+  const el = h('div', { class: 'brand-logo', role: 'img', 'aria-label': 'Menga Smart Wardrobe' });
+  el.innerHTML = HANGER_SVG + '<b>MENGA</b><small>Smart Wardrobe</small>';
+  return el;
+}
 
 // ---------- sezioni dei capi (stile maschile, femminile o entrambi) ----------
 
@@ -1925,13 +1933,28 @@ async function renderProfile() {
 
 // ---------- Impostazioni ----------
 
-const THEMES = { uomo: 'Maschile · scuro', donna: 'Femminile · chiaro' };
+const THEMES = { uomo: 'Uomo', donna: 'Donna' };
+const PALETTES = { '': 'Come il profilo', unisex: 'Unisex · nero e oro' };
+
+const currentPalette = () => document.documentElement.dataset.palette || '';
+
+function paintThemeColor() {
+  const t = document.documentElement.dataset.theme;
+  document.querySelector('meta[name="theme-color"]').content = currentPalette() === 'unisex' ? '#0b0b0b' : t === 'donna' ? '#f4e9da' : '#0D1B2A';
+}
 
 function applyTheme(t) {
   document.documentElement.dataset.theme = t;
-  document.querySelector('meta[name="theme-color"]').content = t === 'donna' ? '#e6d5b8' : '#1f1d1a';
+  paintThemeColor();
   try { localStorage.setItem('menga-tema', t); } catch (e) { /* resta per questa sessione */ }
   updateThemeBtn();
+}
+
+// Colori dell'app: seguono il profilo (Uomo navy e oro, Donna champagne e oro rosa) o Unisex.
+function setPalette(p) {
+  if (p) document.documentElement.dataset.palette = p; else delete document.documentElement.dataset.palette;
+  paintThemeColor();
+  try { localStorage.setItem('menga-palette', p); } catch (e) { /* resta per questa sessione */ }
 }
 
 function setTheme(t) {
@@ -1943,8 +1966,8 @@ function setTheme(t) {
 const themeBtn = document.getElementById('theme-btn');
 function updateThemeBtn() {
   const donna = document.documentElement.dataset.theme === 'donna';
-  themeBtn.setAttribute('aria-label', donna ? 'Passa alla sezione maschile (tema scuro)' : 'Passa alla sezione femminile (tema chiaro)');
-  themeBtn.title = donna ? 'Femminile · chiaro' : 'Maschile · scuro';
+  themeBtn.setAttribute('aria-label', donna ? 'Passa alla sezione maschile' : 'Passa alla sezione femminile');
+  themeBtn.title = donna ? 'Donna' : 'Uomo';
 }
 updateThemeBtn();
 themeBtn.addEventListener('click', () => {
@@ -1995,8 +2018,11 @@ async function openSettings() {
       h('h2', {}, 'Manichini'),
       mannequinSection(),
       statsSection(),
-      h('h2', {}, 'Tema e manichino'),
+      h('h2', {}, 'Profilo e manichino'),
       chipGroup(THEMES, document.documentElement.dataset.theme || 'uomo', { onChange: setTheme }),
+      h('h2', {}, 'Colori dell\'app'),
+      h('p', { class: 'hint' }, 'Uomo: navy e oro satinato. Donna: champagne e oro rosa. Unisex: nero, bianco e oro, per tutti.'),
+      chipGroup(PALETTES, currentPalette(), { onChange: setPalette }),
       h('h2', {}, 'Guida'),
       h('button', { class: 'btn block', type: 'button', onclick: () => { close(); welcome(true); } }, 'Rivedi la guida'),
       h('p', { class: 'hint' }, `Versione ${APP_VERSION}`),
@@ -2150,7 +2176,7 @@ function openLogin({ first = false } = {}) {
     paint();
     return h('div', { class: 'sheet login' },
       first
-        ? h('div', { class: 'login-head' }, h('img', { src: 'icons/icon-192-v3.png', alt: '', class: 'login-logo' }), h('h1', {}, 'Menga Dress'))
+        ? h('div', { class: 'login-head' }, brandLogo())
         : sheetHead('Account', close),
       title,
       h('p', { class: 'hint' }, 'Con l\'account il tuo armadio, gli outfit e il profilo si salvano anche online e li ritrovi su ogni dispositivo.'),
@@ -2276,7 +2302,7 @@ async function welcome(force = false) {
           const [icon, title, text] = WELCOME[step];
           const last = step === WELCOME.length - 1;
           box.replaceChildren(
-            step === 0 ? h('div', { class: 'login-head' }, h('img', { src: 'icons/icon-192-v3.png', alt: '', class: 'login-logo' }), h('h1', {}, 'Benvenuto in Menga Dress')) : null,
+            step === 0 ? h('div', { class: 'login-head' }, brandLogo(), h('h1', {}, 'Benvenuto')) : null,
             h('div', { class: 'welcome-icon', 'aria-hidden': 'true' }, icon),
             h('h2', {}, title),
             h('p', {}, text),
@@ -2468,7 +2494,7 @@ async function profileSetup({ force = false } = {}) {
       next = h('button', { class: 'btn primary', type: 'button', onclick: () => { if (STEPS[step].missing()) return; if (last) finish(); else { step++; paint(); box.scrollTop = 0; dlg.scrollTop = 0; } } },
         last ? 'Fatto' : 'Avanti');
       box.replaceChildren(
-        step === 0 ? h('div', { class: 'login-head' }, h('img', { src: 'icons/icon-192-v3.png', alt: '', class: 'login-logo' }),
+        step === 0 ? h('div', { class: 'login-head' }, brandLogo(),
           h('h1', {}, 'Il tuo profilo'), h('p', { class: 'hint' }, 'Poche domande per consigliarti outfit e acquisti giusti per te. Restano solo sul telefono.')) : null,
         h('div', { class: 'welcome-dots' }, STEPS.map((_, i) => h('i', { class: i === step ? 'on' : '' }))),
         h('h2', {}, st.title),

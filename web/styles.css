@@ -1,31 +1,45 @@
 :root {
-  /* Tema scuro (manichino uomo) */
-  --bg: #161412;
-  --surface: #221f1c;
-  --ink: #f2eee8;
-  --muted: #a59d92;
-  --line: #36312c;
-  --accent: #d39a72;
-  --accent-ink: #1b1410;
-  --accent-soft: #3a2c22;
+  /* Tema Uomo: navy, oro satinato, acciaio scuro */
+  --bg: #0D1B2A;
+  --surface: #14263a;
+  --ink: #eef2f6;
+  --muted: #9aa9ba;
+  --line: #2a3c50;
+  --accent: #c9a45c;
+  --accent-ink: #0D1B2A;
+  --accent-soft: #2b3440;
   --danger: #f2b8b5;
   --radius: 14px;
   --tabbar-h: 64px;
   color-scheme: dark;
 }
 
-/* Tema chiaro avana (manichino donna) */
+/* Tema Donna: champagne, oro rosa, beige premium */
 :root[data-theme="donna"] {
-  --bg: #e6d5b8;
-  --surface: #f4ead8;
-  --ink: #2e2116;
-  --muted: #6f5a44;
-  --line: #d2bd9b;
-  --accent: #8a5a3b;
+  --bg: #f4e9da;
+  --surface: #fcf6ee;
+  --ink: #3b2a25;
+  --muted: #8a6d63;
+  --line: #e4d0bc;
+  --accent: #b76e79;
   --accent-ink: #ffffff;
-  --accent-soft: #ead8bb;
+  --accent-soft: #f3dcd8;
   --danger: #b3261e;
   color-scheme: light;
+}
+
+/* Tema Unisex: nero, bianco, oro (vale per uomo e donna) */
+:root[data-palette="unisex"] {
+  --bg: #0b0b0b;
+  --surface: #171717;
+  --ink: #ffffff;
+  --muted: #a6a6a6;
+  --line: #2c2c2c;
+  --accent: #d4af37;
+  --accent-ink: #0b0b0b;
+  --accent-soft: #2e2715;
+  --danger: #f2b8b5;
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -48,6 +62,8 @@ body {
   border-bottom: 1px solid var(--line);
 }
 .topbar h1 { font-size: 20px; margin: 0; letter-spacing: .2px; }
+.topbar-title { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.topbar .brand-mark { width: 26px; height: 26px; color: var(--accent); flex: 0 0 auto; }
 
 .icon-btn {
   background: none; border: 0; color: var(--ink); padding: 8px; border-radius: 50%;
@@ -282,6 +298,11 @@ dialog .login .btn.block { margin-top: 8px; }
 .login-head { text-align: center; margin: 4px 0 8px; }
 .login-head h1 { margin: 6px 0 0; font-size: 22px; }
 .login-logo { width: 72px; height: 72px; border-radius: 18px; }
+/* Logo: gruccia sopra, MENGA, SMART WARDROBE */
+.brand-logo { display: flex; flex-direction: column; align-items: center; color: var(--accent); margin: 4px 0 10px; }
+.brand-logo svg { width: 64px; height: 50px; }
+.brand-logo b { font: 500 30px/1.1 "Didot", "Bodoni 72", "Noto Serif", Georgia, serif; letter-spacing: .28em; margin: 6px 0 0 .28em; color: var(--ink); }
+.brand-logo small { font-size: 10.5px; letter-spacing: .42em; margin-left: .42em; color: var(--accent); text-transform: uppercase; }
 .login-sep { border-top: 1px solid var(--line); margin: 12px 0 4px; }
 dialog .account { margin-top: 16px; }
 
