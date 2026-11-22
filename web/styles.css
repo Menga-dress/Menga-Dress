@@ -449,3 +449,8 @@ dialog.setup-dlg { width: min(560px, calc(100vw - 16px)); }
 .stats-row:first-child { border-top: 0; }
 .stats-row.head { font-weight: 600; color: var(--muted); background: var(--surface); }
 .stats-row span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Dettagli capo: "Lo indosso oggi" accanto al conteggio. */
+.wear-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin: 6px 0 10px; }
+.wear-row .stat { margin: 0; flex: 1 1 160px; }
+.btn.primary.wear-today.on { background: var(--accent-soft); color: var(--ink); border-color: var(--accent); }
