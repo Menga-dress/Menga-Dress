@@ -73,8 +73,8 @@ body {
 .topbar-actions { display: flex; align-items: center; gap: 4px; }
 /* Tasto uomo/donna: mostra il simbolo del manichino attivo, in oro */
 .gender-btn { color: var(--accent); }
-.gender-btn .g-donna, [data-theme="donna"] .gender-btn .g-uomo { display: none; }
-[data-theme="donna"] .gender-btn .g-donna { display: block; }
+.gender-btn svg { display: none; }
+.gender-btn[data-mode="uomo"] .g-uomo, .gender-btn[data-mode="donna"] .g-donna, .gender-btn[data-mode="unisex"] .g-unisex { display: block; }
 
 main { padding: 16px; max-width: 720px; margin: 0 auto; outline: none; }
 
