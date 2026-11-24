@@ -1,7 +1,7 @@
 import * as db from './db.js';
 import { getWeather, getForecast, savedCity, setCity, forgetCity } from './weather.js';
 import { detectColors } from './colors.js';
-import { suggestOutfits, ideaName, DRESS_CODES, readInvite } from './stylist.js';
+import { suggestOutfits, ideaName, ideaItem, ideaFromId, DRESS_CODES, readInvite } from './stylist.js';
 import { lookView, garmentView, previewPhoto, forgetPhoto, posesFor } from './look.js';
 import { prepareMannequin, loadCustom, saveCustom, removeCustom, syncShared, isAdmin, publishShared, unpublishShared, makeDefinitive, fixedCount } from './manichini.js';
 import { analyzeGarment, isModelCached, rememberGarment, forgetGarment, learnFromWardrobe } from './riconosci.js';
@@ -12,7 +12,7 @@ import {
   mannequinMatch, currentGender, CUSTOM, ZONE_CATEGORIES, zoneOfCategory,
 } from './catalog.js';
 
-const APP_VERSION = '65'; // da aumentare a ogni modifica, si vede nelle Impostazioni
+const APP_VERSION = '66'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
 
@@ -638,9 +638,10 @@ async function renderWardrobe() {
   view.replaceChildren();
 
   if (!items.length) {
-    view.append(h('div', { class: 'empty' },
+    view.append(h('div', { class: 'empty compact' },
       h('strong', {}, 'Il tuo armadio è vuoto'),
-      'Tocca + per fotografare il primo capo: l\'app riconosce tipo e colori e lo collega ai manichini.'));
+      'Tocca + per fotografare il primo capo. Intanto l\'app funziona lo stesso: ecco da dove partire.'));
+    view.append(await starterWardrobe());
   } else {
     // Barra in alto: quanti capi, avviso manichini (compatto) e scelta del layout.
     const missing = items.filter((it) => mannequinMatch(it.category, it.subcategory)?.same === false);
@@ -1300,15 +1301,17 @@ async function renderOutfit() {
   let plannedCard = null;
   if (planned) {
     const byId = Object.fromEntries(items.map((i) => [i.id, i]));
-    const pieces = (planned.itemIds || []).map((id) => byId[id]).filter(Boolean);
+    const pieces = piecesOf(planned.itemIds, byId);
+    const own = pieces.filter((p) => !p.idea);
     const wearBtn = h('button', {
       type: 'button', class: 'btn primary',
-      onclick: async () => { await wearOutfit(planned, pieces); wearBtn.disabled = true; wearBtn.textContent = 'Indossato oggi ✓'; toast('Buona giornata!'); },
+      onclick: async () => { await wearOutfit(planned, own); wearBtn.disabled = true; wearBtn.textContent = 'Indossato oggi ✓'; toast('Buona giornata!'); },
     }, 'Lo indosso oggi');
     plannedCard = h('div', { class: 'card outfit' },
       h('h3', {}, `Per oggi avevi scelto: ${planned.title || 'outfit'}`),
       pieces.length ? h('figure', { class: 'look' }, lookView(pieces, planned.occasion || 'tempo_libero')) : null,
-      h('div', { class: 'row end' }, h('a', { class: 'btn', href: '#/diario' }, 'Diario'), wearBtn));
+      ideasLine(pieces.filter((p) => p.idea), own.length ? 'Ti manca: ' : 'Capi da prendere: ', sectionProfile(await db.getKV('profile'))),
+      h('div', { class: 'row end' }, h('a', { class: 'btn', href: '#/diario' }, 'Diario'), own.length ? wearBtn : null));
   }
 
   // Filtri chiusi in una riga: si vedono le scelte, si aprono a tocco e ogni cambio rifà le proposte.
@@ -1417,21 +1420,8 @@ function paintResults(box, items, list = outfitState.results) {
       dressCodeBadge(o),
       h('p', {}, o.reason),
       lookBox(o.pieces.map((p) => byId[p.id] || p)),
-      h('div', { class: 'pieces' }, o.pieces.map((p) => {
-        const it = byId[p.id] || p;
-        if (it.idea) {
-          const rgb = PALETTE[it.colors[0]] || [200, 200, 200];
-          const light = rgb[0] * 0.3 + rgb[1] * 0.59 + rgb[2] * 0.11 > 150;
-          return h('figure', {}, h('div', { class: 'idea-tile', style: `background:rgb(${rgb.join(',')});color:${light ? '#1f1d1a' : '#fff'}` },
-            h('span', {}, it.subcategory), h('small', {}, it.colors[0])), h('figcaption', {}, 'Da prendere'));
-        }
-        return h('figure', {}, h('img', { src: imgURL(it), alt: describeItem(it), class: it.cutout ? 'cut' : null }), h('figcaption', {}, it.subcategory || CATEGORIES[it.category]));
-      })),
-      o.ideas.length ? h('div', { class: 'missing' },
-        h('span', {}, o.fresh ? 'Il capo nuovo: ' : o.ideas.length === o.pieces.length ? 'Capi da prendere: ' : 'Per completarlo ti manca: '),
-        ...o.ideas.flatMap((it, i) => [i ? ', ' : null,
-          h('a', { href: shopLink(it), target: '_blank', rel: 'noopener' }, ideaName(it))].filter(Boolean)),
-        h('span', {}, ' (tocca per cercarlo online)')) : null,
+      h('div', { class: 'pieces' }, o.pieces.map((p) => pieceFigure(byId[p.id] || p))),
+      ideasLine(o.ideas, o.fresh ? 'Il capo nuovo: ' : o.ideas.length === o.pieces.length ? 'Capi da prendere: ' : 'Per completarlo ti manca: ', outfitState.profile),
       h('div', { class: 'row' }, up, down, h('span', { style: 'flex:1' }), o.fresh || o.outside || o.ideas.length === o.pieces.length ? null : wear)));
   }
 }
@@ -1475,6 +1465,72 @@ function lookBox(pieces) {
 function shopLink(it) {
   return shopSearch(ideaName(it), it.category, outfitState.profile);
 }
+
+// I capi di un outfit salvato: i tuoi e quelli da prendere (salvati col loro id "idea:…").
+function piecesOf(ids, byId) {
+  return (ids || []).map((id) => byId[id] || ideaFromId(id)).filter(Boolean);
+}
+
+// Riquadro di un capo: la foto se è tuo, un colore col nome se è da prendere.
+function pieceFigure(it, caption) {
+  if (it.idea || !it.image) {
+    const rgb = PALETTE[it.colors?.[0]] || [200, 200, 200];
+    const light = rgb[0] * 0.3 + rgb[1] * 0.59 + rgb[2] * 0.11 > 150;
+    return h('figure', {}, h('div', { class: 'idea-tile', style: `background:rgb(${rgb.join(',')});color:${light ? '#1f1d1a' : '#fff'}` },
+      h('span', {}, it.subcategory), h('small', {}, it.colors?.[0] || '')), h('figcaption', {}, caption || (it.idea ? 'Da prendere' : it.subcategory)));
+  }
+  return h('figure', {}, h('img', { src: imgURL(it), alt: describeItem(it), class: it.cutout ? 'cut' : null }), h('figcaption', {}, caption || it.subcategory || CATEGORIES[it.category]));
+}
+
+// Link per cercare online i capi da prendere di un outfit.
+function ideasLine(ideas, label, profile) {
+  if (!ideas.length) return null;
+  return h('div', { class: 'missing' },
+    h('span', {}, label),
+    ...ideas.flatMap((it, i) => [i ? ', ' : null,
+      h('a', { href: shopSearch(ideaName(it), it.category, profile), target: '_blank', rel: 'noopener' }, ideaName(it))].filter(Boolean)),
+    h('span', {}, ' (tocca per cercarlo online)'));
+}
+
+// I capi base da cui partire, per l'armadio vuoto: colori del profilo, mai quelli da evitare.
+const BASICS = {
+  uomo: [['top', 'T-shirt', 'bianco'], ['top', 'Camicia', 'azzurro'], ['top', 'Maglione', 'blu navy'], ['bottom', 'Jeans', 'denim'],
+    ['bottom', 'Chino', 'beige'], ['outerwear', 'Blazer', 'blu navy'], ['outerwear', 'Cappotto', 'grigio'], ['shoes', 'Sneakers', 'bianco'], ['shoes', 'Mocassini', 'marrone']],
+  donna: [['top', 'T-shirt', 'bianco'], ['top', 'Camicetta', 'bianco'], ['top', 'Maglione', 'beige'], ['bottom', 'Jeans', 'denim'],
+    ['bottom', 'Gonna', 'nero'], ['dress', 'Vestito', 'nero'], ['outerwear', 'Blazer', 'nero'], ['outerwear', 'Cappotto', 'beige'],
+    ['shoes', 'Sneakers', 'bianco'], ['shoes', 'Décolleté', 'nero']],
+};
+function basicItems(profile) {
+  const list = (v) => String(v || '').toLowerCase().split(/[,;]+/).map((x) => x.trim()).filter(Boolean);
+  const avoid = list(profile?.avoidColors);
+  const neutral = ['bianco', 'nero', 'grigio', 'blu navy', 'beige', 'marrone'];
+  return BASICS[currentGender() === 'donna' ? 'donna' : 'uomo'].map(([cat, sub, c]) => {
+    const color = avoid.includes(c) ? neutral.find((x) => !avoid.includes(x)) || c : c;
+    return ideaItem(cat, sub, color);
+  });
+}
+
+// Armadio vuoto: un look d'esempio sul manichino col tuo stile e i capi base da cercare online.
+async function starterWardrobe() {
+  const profile = sectionProfile(await db.getKV('profile'));
+  const sex = currentGender() === 'donna' ? 'donna' : 'uomo';
+  const style = (profile.styles || []).find((st) => STYLE_LOOKS[st]) || 'smart_casual';
+  const look = STYLE_LOOKS[style];
+  const lookPieces = look[sex].map((p) => ideaItem(p.category, p.subcategory, p.colors[0]));
+  const basics = basicItems(profile);
+  return h('div', {},
+    h('div', { class: 'card outfit' },
+      h('p', { class: 'fresh-tag' }, `✨ Un look ${STYLES[style].toLowerCase()} per te`),
+      h('figure', { class: 'look' }, lookView(lookPieces, look.occ, sex), h('figcaption', {}, 'Anteprima sul manichino')),
+      h('div', { class: 'pieces' }, lookPieces.map((it) => pieceFigure(it))),
+      ideasLine(lookPieces, 'Per averlo: ', profile)),
+    h('div', { class: 'card outfit' },
+      h('h3', {}, 'I capi base da cui partire'),
+      h('p', { class: 'hint' }, 'Con questi pochi capi si fanno outfit per quasi ogni occasione. Tocca un capo per cercarlo online nella tua taglia.'),
+      h('div', { class: 'pieces' }, basics.map((it) => h('a', { href: shopSearch(ideaName(it), it.category, profile), target: '_blank', rel: 'noopener', class: 'piece-link' }, pieceFigure(it, ideaName(it)))))),
+    h('a', { class: 'btn primary block', href: '#/outfit' }, '⭐ Vedi gli outfit di oggi'),
+    h('div', { class: 'spacer' }));
+}
 // ---------- Diario: calendario degli outfit e statistiche ----------
 
 const pad2 = (n) => String(n).padStart(2, '0');
@@ -1512,7 +1568,7 @@ async function renderDiary() {
 
 // Piccola fila di colori dei capi di un outfit.
 function outfitDots(o, byId) {
-  return h('span', { class: 'odots' }, (o.itemIds || []).map((id) => byId[id]).filter(Boolean).slice(0, 4).map((it) => {
+  return h('span', { class: 'odots' }, piecesOf(o.itemIds, byId).slice(0, 4).map((it) => {
     const rgb = PALETTE[it.colors?.[0]] || [150, 150, 150];
     return h('i', { style: `background:rgb(${rgb.join(',')})` });
   }));
@@ -1601,20 +1657,22 @@ function openDay(k, items, outfits) {
   openDialog((close) => h('div', { class: 'sheet' },
     sheetHead(`${WEEKDAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`, close),
     ...list.map((o) => {
-      const pieces = (o.itemIds || []).map((id) => byId[id]).filter(Boolean);
+      const pieces = piecesOf(o.itemIds, byId);
+      const own = pieces.filter((p) => !p.idea);
       const isToday = k === todayKey();
       return h('div', { class: 'card outfit' },
         h('h3', {}, o.title || 'Outfit'),
         h('p', { class: 'hint' }, o.worn ? 'Indossato' : 'Pianificato', o.weather ? ` · ${o.weather}` : ''),
         pieces.length ? h('figure', { class: 'look' }, lookView(pieces, o.occasion || 'tempo_libero')) : null,
-        h('div', { class: 'pieces' }, pieces.map((it) => h('figure', {}, h('img', { src: imgURL(it), alt: describeItem(it), class: it.cutout ? 'cut' : null }), h('figcaption', {}, it.subcategory || CATEGORIES[it.category])))),
+        h('div', { class: 'pieces' }, pieces.map((it) => pieceFigure(it))),
+        ideasLine(pieces.filter((p) => p.idea), own.length ? 'Ti manca: ' : 'Capi da prendere: ', outfitState.profile || { gender: currentGender() }),
         h('div', { class: 'row end' },
           h('button', {
             type: 'button', class: 'btn danger',
             onclick: async () => {
               if (!confirm(o.worn ? 'Togliere questo outfit dal calendario?' : 'Togliere questo outfit pianificato?')) return;
               if (o.worn) {
-                for (const it of pieces) { it.timesWorn = Math.max(0, (it.timesWorn || 0) - 1); await db.put('items', it); }
+                for (const it of own) { it.timesWorn = Math.max(0, (it.timesWorn || 0) - 1); await db.put('items', it); }
               }
               await db.remove('outfits', o.id);
               close();
@@ -1622,9 +1680,9 @@ function openDay(k, items, outfits) {
               route();
             },
           }, 'Togli'),
-          !o.worn && isToday ? h('button', {
+          !o.worn && isToday && own.length ? h('button', {
             type: 'button', class: 'btn primary',
-            onclick: async () => { await wearOutfit(o, pieces); close(); toast('Buona giornata!'); route(); },
+            onclick: async () => { await wearOutfit(o, own); close(); toast('Buona giornata!'); route(); },
           }, 'Lo indosso oggi') : null));
     })));
 }
@@ -1721,26 +1779,25 @@ function planDay(k, fc, items) {
       const list = suggestOutfits({ items: items.filter(inSection), profile: sectionProfile(profile), history, mood, occasion, dressCode, weather: fc || null });
       results.replaceChildren(...list.map((o) => {
         const pieces = o.pieces;
-        const usable = o.ideas.length < o.pieces.length;
         return h('div', { class: 'card outfit' },
           h('h3', {}, o.title),
           dressCodeBadge(o),
           h('p', {}, o.reason),
           h('figure', { class: 'look' }, lookView(pieces, occasion)),
-          o.ideas.length ? h('p', { class: 'hint' }, `Ti manca: ${o.ideas.map(ideaName).join(', ')}`) : null,
-          usable ? h('div', { class: 'row end' }, h('button', {
+          o.ideas.length ? h('p', { class: 'hint' }, `${o.ideas.length === o.pieces.length ? 'Capi da prendere' : 'Ti manca'}: ${o.ideas.map(ideaName).join(', ')}`) : null,
+          h('div', { class: 'row end' }, h('button', {
             type: 'button', class: 'btn primary',
             onclick: async () => {
               await db.put('outfits', {
                 id: db.newId(), date: new Date().toISOString(), planned: k,
-                title: o.title, reason: o.reason, itemIds: o.item_ids.filter((id) => items.some((it) => it.id === id)),
+                title: o.title, reason: o.reason, itemIds: o.item_ids,
                 mood, occasion, dressCode: o.dressCode?.key || null, weather: fc?.summary || null, rating: null, worn: false,
               });
               close();
               toast('Outfit pianificato');
               route();
             },
-          }, 'Scelgo questo')) : null);
+          }, 'Scelgo questo')));
       }));
     };
     return h('div', { class: 'sheet' },
@@ -1802,7 +1859,30 @@ function gapLink(idea, profile) {
 function statsView(items, outfits) {
   const box = h('div');
   if (!items.length) {
-    box.append(h('p', { class: 'hint' }, 'Aggiungi qualche capo all\'armadio per vedere le statistiche.'));
+    // Armadio vuoto: si vede lo stesso cosa serve e gli outfit pianificati o segnati.
+    const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+    const planned = outfits.filter((o) => o.planned && !o.worn && o.planned >= todayKey()).length;
+    const wornMonth = outfits.filter((o) => o.worn && o.date && new Date(o.date) >= monthStart).length;
+    const gapsBox = h('div', { class: 'gaps' });
+    db.getKV('profile').then((raw) => {
+      const profile = sectionProfile(raw);
+      const seen = new Set();
+      const gaps = wardrobeGaps(items, profile).filter((g) => {
+        const k = `${g.idea.subcategory}|${g.idea.colors[0]}`;
+        if (seen.has(k)) return false;
+        seen.add(k); return true;
+      });
+      gapsBox.replaceChildren(h('ul', {}, gaps.map((g) => h('li', {}, g.text, ' ', h('a', { href: gapLink(g.idea, profile), target: '_blank', rel: 'noopener' }, `Cerca ${g.idea.subcategory.toLowerCase()} ${g.idea.colors[0]}`)))));
+    });
+    box.append(
+      h('div', { class: 'kpis' },
+        h('div', {}, h('b', {}, '0'), h('span', {}, 'capi')),
+        h('div', {}, h('b', {}, planned), h('span', {}, 'outfit pianificati')),
+        h('div', {}, h('b', {}, wornMonth), h('span', {}, 'outfit questo mese'))),
+      h('p', { class: 'hint' }, 'L\'armadio è vuoto: qui sotto i capi che servono per partire. Appena aggiungi i tuoi capi vedrai anche i più usati, quelli dimenticati e i tuoi colori.'),
+      h('h2', {}, 'Cosa ti manca'),
+      gapsBox,
+      h('a', { class: 'btn block', href: '#/armadio' }, 'Vedi i capi base sul manichino'));
     return box;
   }
   const worn = items.filter((i) => i.timesWorn);
