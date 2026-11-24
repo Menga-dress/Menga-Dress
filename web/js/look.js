@@ -2,7 +2,7 @@
 // proposti. Ogni capo ha la sua forma (camicia, felpa, blazer, jeans, sneakers...) e il colore del
 // capo vero, con sopra luci, ombre e pieghe che danno volume (effetto 3D) qualunque sia il colore.
 // Se manca un capo si usa quello tipico dell'occasione.
-import { PALETTE, mannequinMatch, currentGender, CUSTOM, MANNEQUIN, zoneOfCategory, findSubtype } from './catalog.js';
+import { PALETTE, mannequinMatch, currentGender, CUSTOM, MANNEQUIN, zoneOfCategory, findSubtype, ownerItem } from './catalog.js';
 
 const VW = 400;
 const VH = 600;
@@ -679,11 +679,20 @@ function chooseCustom(pieces, occasion, appBase) {
     // Un manichino senza giacca non va bene se la proposta ha la giacca (o il blazer chiesto
     // dal dress code) o un abito: la giacca sparirebbe dall'immagine.
     if (!c.garments?.[1] && pieces.some((p) => zoneOfCategory(p.category) === 1)) continue;
+    // Fatto per un capo preciso: solo se quel capo è nella proposta.
+    const owner = ownerItem(c);
+    const ownerZone = owner ? [1, 2, 3, 4].find((z) => c.garments?.[z] && c.garments[z] === c.main) || 0 : 0;
+    if (owner && !pieces.some((p) => p.id === owner)) continue;
     const sameOcc = (c.occasions || []).includes(occasion);
     let score = 0; let special = false; let zones = 0;
     for (const z of [1, 2, 3, 4]) if (c.garments?.[z]) zones++;
     for (const p of pieces) {
       const z = zoneOfCategory(p.category);
+      if (owner && z === ownerZone) {
+        if (p.id !== owner) continue;
+        score++; special = true;
+        continue;
+      }
       if (!z || !p.subcategory || c.garments?.[z] !== p.subcategory) continue;
       score++;
       if (c.main === p.subcategory || !(MANNEQUIN[gender].have[p.category] || []).includes(p.subcategory)) special = true;
@@ -943,8 +952,8 @@ const SINGLE = {
 };
 
 // Restituisce { view, garment, same } oppure null se il capo non ha un posto sul manichino.
-export function garmentView(category, name, colors, pattern) {
-  const m = mannequinMatch(category, name);
+export function garmentView(category, name, colors, pattern, itemId) {
+  const m = mannequinMatch(category, name, undefined, itemId);
   if (!m?.garment) return null;
   const spec = m.custom ? [`mio:${m.custom}`, [m.zone]] : SINGLE[currentGender()][m.garment];
   if (!spec) return null;

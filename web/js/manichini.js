@@ -5,7 +5,7 @@
 // I manichini restano sul telefono (IndexedDB, chiave 'manichini') ed entrano nel backup.
 
 import * as db from './db.js';
-import { setCustomMannequins } from './catalog.js';
+import { setCustomMannequins, zoneOfCategory } from './catalog.js';
 
 export const W = 640;
 export const H = 960;
@@ -62,9 +62,35 @@ async function refresh() {
 
 export async function loadCustom() {
   await loadFixed();
+  try { await linkOldToItems(); } catch (e) { console.warn('manichini dei capi', e); }
   const mine = await refresh();
   syncShared().catch((e) => console.warn('manichini pubblici', e));
   return mine;
+}
+
+// Fino alla versione 67 un manichino fatto dalla scheda di un capo valeva per tutti i capi
+// dello stesso tipo: due mocassini diversi finivano sullo stesso manichino. Ora ogni manichino
+// ricorda il suo capo (itemId). Per quelli di prima lo si ricostruisce: è il capo di quel tipo
+// aggiunto per ultimo prima del manichino (anche dopo un ripristino del backup).
+async function linkOldToItems() {
+  const list = (await db.getKV(KEY)) || [];
+  const items = (await db.getAll('items')) || [];
+  const taken = new Set(list.map((m) => m.itemId).filter(Boolean));
+  let changed = false;
+  const old = list.filter((m) => !m.itemId && m.main && m.createdAt)
+    .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+  for (const m of old) {
+    const z = Number(Object.keys(m.garments || {}).find((k) => m.garments[k] === m.main)) || 0;
+    if (!z) continue;
+    const it = items.filter((x) => !taken.has(x.id) && x.subcategory === m.main && zoneOfCategory(x.category) === z
+      && x.createdAt && x.createdAt <= m.createdAt)
+      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))[0];
+    if (!it) continue;
+    m.itemId = it.id;
+    taken.add(it.id);
+    changed = true;
+  }
+  if (changed) await db.setKV(KEY, list);
 }
 
 export async function saveCustom(m) {
