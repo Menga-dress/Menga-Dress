@@ -60,6 +60,9 @@ async function refresh() {
   return mine;
 }
 
+// Ricarica gli elenchi dopo che l'abbinamento con le foto (abbina.js) ha cambiato qualcosa.
+export const reloadCustom = () => refresh();
+
 export async function loadCustom() {
   await loadFixed();
   try { await linkOldToItems(); } catch (e) { console.warn('manichini dei capi', e); }

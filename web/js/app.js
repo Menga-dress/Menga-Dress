@@ -3,7 +3,8 @@ import { getWeather, getForecast, savedCity, setCity, forgetCity } from './weath
 import { detectColors, sameShade } from './colors.js';
 import { suggestOutfits, ideaName, ideaItem, ideaFromId, DRESS_CODES, readInvite } from './stylist.js';
 import { lookView, garmentView, previewPhoto, forgetPhoto, posesFor } from './look.js';
-import { prepareMannequin, loadCustom, saveCustom, removeCustom, syncShared, isAdmin, publishShared, unpublishShared, makeDefinitive, fixedCount } from './manichini.js';
+import { matchByPhoto } from './abbina.js';
+import { prepareMannequin, reloadCustom, loadCustom, saveCustom, removeCustom, syncShared, isAdmin, publishShared, unpublishShared, makeDefinitive, fixedCount } from './manichini.js';
 import { analyzeGarment, isModelCached, rememberGarment, forgetGarment, learnFromWardrobe } from './riconosci.js';
 import { removeBackground } from './sfondo.js';
 import * as sync from './sync.js';
@@ -15,7 +16,7 @@ import {
 // Colori senza tinta: tra questi conta solo la luminosità.
 const NO_HUE = new Set(['nero', 'grigio', 'grigio chiaro', 'bianco']);
 
-const APP_VERSION = '68'; // da aumentare a ogni modifica, si vede nelle Impostazioni
+const APP_VERSION = '69'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
 
@@ -398,7 +399,8 @@ function openMannequinEditor({ category, name, onSaved, pose, ref } = {}) {
           id: db.newId(), name: nameIn.value.trim() || autoName(), gender: gender.value(), occasions: occ,
           garments, main: presetZone && garments[presetZone] ? garments[presetZone] : null, pose: pose?.base || null,
           // Fatto dalla scheda di un capo: vale solo per quel capo, non per tutti quelli dello stesso tipo.
-          itemId: presetZone && garments[presetZone] && ref?.id ? ref.id : null, base: prepared.base, zone: prepared.zone, createdAt: new Date().toISOString(),
+          itemId: presetZone && garments[presetZone] && ref?.id ? ref.id : null,
+          itemSource: presetZone && garments[presetZone] && ref?.id ? 'scheda' : null, base: prepared.base, zone: prepared.zone, createdAt: new Date().toISOString(),
         };
         try {
           await saveCustom(m);
@@ -537,37 +539,45 @@ function posesBox(category, name, ref) {
         : h('button', { type: 'button', class: 'btn small', onclick: () => showNewMannequin(category, name, ref?.(), p) }, 'Crea')))));
 }
 
-// I tuoi manichini dello stesso tipo fatti per altri capi: se uno in realtà è di questo capo
-// (es. collegato male a un altro dei due mocassini), con un tocco passa a questo.
-function otherItemsMannequins(category, name, item, colorsNow) {
+// Gli altri tuoi manichini dello stesso tipo (di altri capi o di questo, ma non quello mostrato):
+// se l'app ha scelto male, con un tocco quello giusto passa a questo capo e d'ora in poi resta suo.
+function otherItemsMannequins(category, name, item, colorsNow, shownId) {
   const g = currentGender();
   const z = zoneOfCategory(category);
-  const list = CUSTOM.filter((c) => c.gender === g && ownerItem(c) && ownerItem(c) !== item.id && c.garments?.[z] === name);
-  if (!z || !list.length) return null;
+  if (!z) return null;
+  const list = CUSTOM.filter((c) => c.gender === g && !c.shared && !c.fixed && c.id !== shownId
+    && (c.garments?.[z] === name || ownerItem(c) === item.id));
+  if (!list.length) return null;
   const main = PALETTE[String(colorsNow() || '').split(',')[0].trim()] || [150, 150, 150];
   const neutral = [212, 210, 205];
   return h('details', { class: 'poses' },
-    h('summary', {}, `${list.length === 1 ? 'Un tuo manichino' : `${list.length} tuoi manichini`} di ${name.toLowerCase()} ${list.length === 1 ? 'è' : 'sono'} di altri capi`),
-    h('p', { class: 'hint' }, 'Ogni capo ha il suo manichino. Se uno di questi in realtà è di questo capo, toccalo e passa a questo.'),
+    h('summary', {}, `${list.length === 1 ? 'Un altro tuo manichino' : `Altri ${list.length} tuoi manichini`} di ${name.toLowerCase()}`),
+    h('p', { class: 'hint' }, 'L\'app abbina da sola i manichini ai capi confrontando le foto. Se ha sbagliato, tocca quello giusto: da quel momento è di questo capo.'),
     h('div', { class: 'pose-grid' }, list.map((c) => {
       const canvas = h('canvas', { class: 'pose-canvas', 'aria-label': c.name });
       const paint = {};
       for (const k of [1, 2, 3, 4]) paint[k] = k === z ? main : neutral;
       previewPhoto(canvas, c.base, c.zone, paint).catch(() => {});
-      return h('div', { class: 'pose' }, canvas, h('small', {}, c.name),
+      const mine = ownerItem(c) === item.id;
+      return h('div', { class: 'pose' }, canvas, h('small', {}, c.name + (mine ? ' · di questo capo' : ownerItem(c) ? ' · di un altro capo' : '')),
         h('button', {
           type: 'button', class: 'btn small',
           onclick: async () => {
             try {
-              const all = CUSTOM.filter((x) => !x.shared && !x.fixed);
-              const mine = all.find((x) => x.id === c.id);
-              await saveCustom({ ...mine, itemId: item.id, garments: { ...mine.garments }, main: mine.main || name });
-              toast('Manichino passato a questo capo');
+              await saveCustom({ ...c, itemId: item.id, itemSource: 'manuale', chosenAt: new Date().toISOString(), garments: { ...c.garments }, main: c.main || name });
+              toast('Ora questo capo usa questo manichino');
               window.dispatchEvent(new Event('manichini'));
-            } catch (e) { console.warn('manichino', e); toast('Non sono riuscito a spostarlo.'); }
+            } catch (e) { console.warn('manichino', e); toast('Non sono riuscito a cambiarlo.'); }
           },
-        }, 'È di questo capo'));
+        }, 'Usa per questo capo'));
     })));
+}
+
+// I tuoi manichini vanno al capo che somiglia di più (abbina.js); se cambia qualcosa si ridisegna.
+async function photoMatchMannequins() {
+  try {
+    if (await matchByPhoto()) { await reloadCustom(); window.dispatchEvent(new Event('manichini')); }
+  } catch (e) { console.warn('abbinamento manichini', e); }
 }
 
 function newMannequinButton(category, name, label = 'Come creare il manichino', ref) {
@@ -862,21 +872,23 @@ function editItem(item, { isNew = false } = {}) {
         const notMine = mine?.shared || mine?.fixed;
         box = h('div', { class: 'match ok' }, h('strong', {}, `✓ Sul ${notMine ? '' : 'tuo '}manichino${mine ? ` "${mine.name}"` : ''}`),
           notMine ? `È uno dei manichini ${mine.fixed ? 'dell\'app' : 'per tutti'}. Se qualcosa non torna puoi farne uno tuo: prende il suo posto.`
-            : ownerItem(mine) === item.id ? `È fatto apposta per questo capo: gli altri ${name.toLowerCase()} hanno ognuno il suo. Se qualcosa non torna puoi rifarlo.`
+            : ownerItem(mine) === item.id ? (mine.itemSource === 'foto' || !mine.itemSource
+              ? `L'app l'ha abbinato a questo capo confrontando le foto: gli altri ${name.toLowerCase()} hanno ognuno il suo. Se è sbagliato, scegli quello giusto qui sotto.`
+              : `È il manichino di questo capo: gli altri ${name.toLowerCase()} hanno ognuno il suo. Se qualcosa non torna puoi rifarlo.`)
               : 'Se qualcosa non torna puoi rifarlo: quello nuovo prende il suo posto.',
           newMannequinButton(category, name, notMine ? 'Crea un manichino tuo' : 'Rifai il manichino', capoVero),
           posesBox(category, name, capoVero),
-          otherItemsMannequins(category, name, item, () => f.colors.value));
+          otherItemsMannequins(category, name, item, () => f.colors.value, m.custom));
       } else if (m.same) {
         box = h('div', { class: 'match ok' }, h('strong', {}, `✓ Sui manichini: ${m.garment}`),
           `I ${who} hanno lo stesso capo, l'anteprima lo mostra col suo colore. Se sul manichino non viene bene, puoi crearne uno tuo per questo capo.`,
           newMannequinButton(category, name, 'Crea un manichino per questo capo', capoVero),
-          otherItemsMannequins(category, name, item, () => f.colors.value));
+          otherItemsMannequins(category, name, item, () => f.colors.value, null));
       } else {
         box = h('div', { class: 'match warn' }, h('strong', {}, `⚠ Serve un nuovo manichino: i ${who} non hanno ${articolo(name)}`),
           m.garment ? `Per ora nell'anteprima appare come il capo più simile: ${m.garment}.` : 'Per ora nell\'anteprima non compare.',
           newMannequinButton(category, name, undefined, capoVero),
-          otherItemsMannequins(category, name, item, () => f.colors.value));
+          otherItemsMannequins(category, name, item, () => f.colors.value, null));
       }
       // Fantasie che il manichino non sa ridisegnare.
       const pat = f.pattern.value;
@@ -1124,6 +1136,7 @@ function editItem(item, { isNew = false } = {}) {
         if (!lastEmb || lastEmbImage !== item.image) lastEmb = null;
         if (lastEmb) await rememberGarment(updated, lastEmb);
         await learnFromWardrobe();
+        await photoMatchMannequins();
       };
       learnNow().catch(() => {});
       close();
@@ -2731,7 +2744,7 @@ window.addEventListener('manichini', () => { if (!document.querySelector('dialog
 db.askPersistence();
 welcome().then(() => profileSetup()).then((shown) => { if (shown) route(); }).then(initAccount);
 // L'app impara dai capi già salvati (in sottofondo, solo se il modello è già sul telefono).
-if (isModelCached()) setTimeout(() => { learnFromWardrobe().catch(() => {}); }, 4000);
+if (isModelCached()) setTimeout(() => { learnFromWardrobe().catch(() => {}).then(photoMatchMannequins); }, 4000);
 
 // Aggiornamenti: controlla subito se c'è una versione nuova (anche quando riapri l'app)
 // e, appena è installata, ricarica la pagina da sola.

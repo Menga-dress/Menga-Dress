@@ -240,8 +240,10 @@ function customFor(category, name, gender, itemId) {
   if (!z) return null;
   // Prima quello fatto per questo capo preciso (anche se poi gli hai cambiato tipo);
   // quelli fatti per un altro capo non si usano: due mocassini diversi non hanno lo stesso manichino.
+  // Tra più manichini dello stesso capo vince quello scelto da te ("Usa per questo capo"), poi il più recente.
   const own = itemId && CUSTOM.filter((x) => x.gender === gender && ownerItem(x) === itemId && x.garments?.[z])
-    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))[0];
+    .sort((a, b) => String(b.chosenAt || '').localeCompare(String(a.chosenAt || ''))
+      || String(b.createdAt).localeCompare(String(a.createdAt)))[0];
   if (own) return { id: own.id, zone: z };
   // Poi il più recente, preferendo quelli creati proprio per questo tipo.
   const list = CUSTOM.filter((x) => x.gender === gender && x.garments?.[z] === name && !ownerItem(x))
