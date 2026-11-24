@@ -15,16 +15,23 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  # Due lavori separati (come il modello ufficiale di GitHub): la pubblicazione parte solo
+  # quando il pacchetto del sito è già registrato, se no a volte non lo trova.
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
           path: web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@v4
