@@ -80,7 +80,7 @@ function rank(list, v, n) {
 }
 
 // Impronta della foto (vettore normalizzato).
-async function embed(blob) {
+export async function embed(blob) {
   const { ort, pre, session } = await load();
   const px = await pixels(blob, pre);
   const res = await session.run({ [session.inputNames[0]]: new ort.Tensor('float32', px.data, px.dims) });
@@ -90,6 +90,13 @@ async function embed(blob) {
   for (let i = 0; i < raw.length; i++) n += raw[i] * raw[i];
   n = Math.sqrt(n) || 1;
   return Array.from(raw, (x) => x / n);
+}
+
+// Probabilità dei tipi di una categoria (es. le scarpe) per un'impronta: { Mocassini: 0.6, Polacchini: 0.3, … }.
+export async function typeProbs(emb, category) {
+  const { classes } = await load();
+  const list = classes.filter((c) => c.category === category);
+  return Object.fromEntries(rank(list, emb).map((t) => [t.name, t.p]));
 }
 
 // ---------- l'app impara dai tuoi capi ----------
