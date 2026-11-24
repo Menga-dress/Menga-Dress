@@ -61,7 +61,7 @@ const TESTS = {
   'sneakers shoes': ['Sneakers', 'Scarpe da corsa'], 'summer dress': ['Vestito', 'Abito elegante'], 'skirt garment': ['Gonna'],
   'puffer jacket': ['Piumino'], 'loafers shoes': ['Mocassini'], 'cardigan sweater': ['Cardigan', 'Maglione'], 'polo shirt': ['Polo'],
   'leather handbag': ['Borsa'], 'trench coat': ['Trench', 'Cappotto'], 'sweatpants': ['Pantaloni sportivi'], 'necktie': ['Cravatta'],
-  'chelsea boots': ['Stivaletti'], 'dress shirt': ['Camicia', 'Camicia elegante'], 'denim jacket': ['Giacca di jeans'],
+  'chelsea boots': ['Stivaletti'], 'desert boots': ['Polacchini', 'Stivaletti'], 'dress shirt': ['Camicia', 'Camicia elegante'], 'denim jacket': ['Giacca di jeans'],
   'cargo pants': ['Cargo'], 'high heels shoes': ['Décolleté'], 'knitted sweater': ['Maglione', 'Cardigan'], 'sandals footwear': ['Sandali'],
 };
 const UA = { 'User-Agent': 'wardrobe-classifier-test/1.0' };

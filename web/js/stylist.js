@@ -141,7 +141,7 @@ const IDEA_COLORS = {
 };
 const IDEA_COLOR_BY_TYPE = {
   Jeans: ['denim', 'nero'], 'Giacca di jeans': ['denim'], Trench: ['beige'], Piumino: ['nero', 'blu navy'],
-  'Scarpe da corsa': ['grigio', 'nero'], Sneakers: ['bianco'], Stivaletti: ['marrone', 'nero'],
+  'Scarpe da corsa': ['grigio', 'nero'], Sneakers: ['bianco'], Stivaletti: ['marrone', 'nero'], Polacchini: ['marrone', 'beige'],
   Mocassini: ['marrone', 'nero'], 'Scarpe eleganti': ['nero', 'marrone'], Sandali: ['marrone'], Décolleté: ['nero', 'beige'], Leggings: ['nero'], 'Pantaloni sportivi': ['nero', 'grigio'],
   'Maglia sportiva': ['nero', 'blu'], 'Abito elegante': ['nero', 'blu navy'], Completo: ['blu navy', 'grigio'],
 };
@@ -177,7 +177,7 @@ export function ideaFromId(id) {
 
 // Nome dell'idea in italiano corretto: "camicia bianca", "pantaloni neri".
 const FEM = new Set(['Camicia', 'Camicia elegante', 'Camicetta', 'Felpa', 'Maglia sportiva', 'Gonna', 'Tuta', 'Giacca di jeans', 'T-shirt', 'Polo']);
-const PLURAL_M = new Set(['Jeans', 'Chino', 'Pantaloni eleganti', 'Pantaloni sportivi', 'Bermuda', 'Leggings', 'Mocassini', 'Stivaletti', 'Sandali']);
+const PLURAL_M = new Set(['Jeans', 'Chino', 'Pantaloni eleganti', 'Pantaloni sportivi', 'Bermuda', 'Leggings', 'Mocassini', 'Stivaletti', 'Polacchini', 'Sandali']);
 const PLURAL_F = new Set(['Scarpe da corsa', 'Scarpe eleganti', 'Sneakers', 'Décolleté']);
 export function ideaName(it) {
   const n = it.subcategory;

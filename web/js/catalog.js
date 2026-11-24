@@ -121,6 +121,7 @@ export const SUBTYPES = {
     t('Mocassini', 3, ALL, ['smart_casual', 'classic', 'edgy'], 2),
     t('Scarpe eleganti', 5, ALL, ['formal', 'classic'], 2),
     t('Stivaletti', 3, ['autumn', 'winter'], ['classic', 'edgy'], 3),
+    t('Polacchini', 3, ['spring', 'autumn', 'winter'], ['casual', 'smart_casual', 'classic'], 2),
     t('Sandali', 2, ['summer'], ['casual', 'boho'], 1),
     t('Décolleté', 5, ALL, ['formal', 'romantic'], 2),
   ],
@@ -180,7 +181,7 @@ export const MANNEQUIN = {
       Polo: 'T-shirt', Camicetta: 'Camicia', Top: 'T-shirt', Maglione: 'Felpa', Cardigan: 'Felpa', 'Maglia sportiva': 'T-shirt',
       Bermuda: 'Chino', Leggings: 'Pantaloni sportivi', 'Abito elegante': 'Completo',
       'Giacca di jeans': 'Giubbotto', Trench: 'Blazer', Cappotto: 'Blazer', Piumino: 'Giubbotto', Impermeabile: 'Giubbotto',
-      'Scarpe da corsa': 'Sneakers', Mocassini: 'Sneakers', 'Scarpe eleganti': 'Sneakers', Stivaletti: 'Sneakers', Sandali: 'Sneakers',
+      'Scarpe da corsa': 'Sneakers', Mocassini: 'Sneakers', 'Scarpe eleganti': 'Sneakers', Stivaletti: 'Sneakers', Polacchini: 'Sneakers', Sandali: 'Sneakers',
     },
   },
   donna: {
@@ -197,7 +198,7 @@ export const MANNEQUIN = {
       Jeans: 'Cargo', Chino: 'Pantaloni eleganti', Leggings: 'Pantaloni sportivi',
       Completo: 'Blazer', Tuta: 'Pantaloni sportivi',
       'Giacca di jeans': 'Giubbotto', Trench: 'Blazer', Cappotto: 'Blazer', Impermeabile: 'Giubbotto',
-      'Scarpe da corsa': 'Sneakers', Mocassini: 'Sneakers', 'Scarpe eleganti': 'Décolleté', Stivaletti: 'Décolleté', Sandali: 'Décolleté',
+      'Scarpe da corsa': 'Sneakers', Mocassini: 'Sneakers', 'Scarpe eleganti': 'Décolleté', Stivaletti: 'Décolleté', Polacchini: 'Sneakers', Sandali: 'Décolleté',
     },
   },
 };
@@ -207,12 +208,13 @@ export const currentGender = () => (document.documentElement.dataset.theme === '
 // Il capo dell'armadio ha lo stesso capo sui manichini?
 // → { same: true, garment } | { same: false, garment } (il più vicino) | { same: false, garment: null }
 // | null se il tipo non è tra quelli conosciuti (nome scritto a mano).
-export function mannequinMatch(category, name, gender = currentGender()) {
+// itemId: il capo dell'armadio; un manichino fatto per un capo preciso vale solo per quel capo.
+export function mannequinMatch(category, name, gender = currentGender(), itemId = null) {
   const tp = findSubtype(category, name);
   if (!tp) return null;
   const m = MANNEQUIN[gender];
   // Un manichino creato da te per questo capo vince su quello dell'app.
-  const mine = customFor(category, tp.name, gender);
+  const mine = customFor(category, tp.name, gender, itemId);
   if (mine) return { same: true, garment: tp.name, custom: mine.id, zone: mine.zone };
   if ((m.have[category] || []).includes(tp.name)) return { same: true, garment: tp.name };
   return { same: false, garment: m.near[tp.name] || null };
@@ -230,11 +232,19 @@ export const zoneOfCategory = (cat) => Number(Object.keys(ZONE_CATEGORIES).find(
 // Prima i tuoi, poi quelli per tutti, poi quelli resi definitivi (nel codice dell'app).
 const rank = (c) => (c.fixed ? 2 : c.shared ? 1 : 0);
 
-function customFor(category, name, gender) {
+// Il capo per cui è stato fatto un tuo manichino (quelli per tutti e dell'app valgono per ogni capo).
+export const ownerItem = (c) => (c && !c.shared && !c.fixed && c.itemId) || null;
+
+function customFor(category, name, gender, itemId) {
   const z = zoneOfCategory(category);
   if (!z) return null;
-  // Il più recente, preferendo quelli creati proprio per questo capo.
-  const list = CUSTOM.filter((x) => x.gender === gender && x.garments?.[z] === name)
+  // Prima quello fatto per questo capo preciso (anche se poi gli hai cambiato tipo);
+  // quelli fatti per un altro capo non si usano: due mocassini diversi non hanno lo stesso manichino.
+  const own = itemId && CUSTOM.filter((x) => x.gender === gender && ownerItem(x) === itemId && x.garments?.[z])
+    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))[0];
+  if (own) return { id: own.id, zone: z };
+  // Poi il più recente, preferendo quelli creati proprio per questo tipo.
+  const list = CUSTOM.filter((x) => x.gender === gender && x.garments?.[z] === name && !ownerItem(x))
     .sort((a, b) => (b.main === name) - (a.main === name) || rank(a) - rank(b)
       || String(b.createdAt).localeCompare(String(a.createdAt)));
   const c = list[0];

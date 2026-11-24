@@ -9,13 +9,13 @@ import { removeBackground } from './sfondo.js';
 import * as sync from './sync.js';
 import {
   CATEGORIES, SEASONS, STYLES, PATTERNS, MOODS, OCCASIONS, FORMALITY, SUBTYPES, PALETTE, describeItem,
-  mannequinMatch, currentGender, CUSTOM, ZONE_CATEGORIES, zoneOfCategory,
+  mannequinMatch, currentGender, CUSTOM, ZONE_CATEGORIES, zoneOfCategory, ownerItem,
 } from './catalog.js';
 
 // Colori senza tinta: tra questi conta solo la luminosità.
 const NO_HUE = new Set(['nero', 'grigio', 'grigio chiaro', 'bianco']);
 
-const APP_VERSION = '66'; // da aumentare a ogni modifica, si vede nelle Impostazioni
+const APP_VERSION = '68'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
 
@@ -150,7 +150,7 @@ const EN = {
   Bermuda: 'bermuda shorts', Gonna: 'a skirt', Leggings: 'leggings', Vestito: 'a dress', 'Abito elegante': 'an evening gown', Completo: 'a suit', Tuta: 'a tracksuit',
   Giubbotto: 'a bomber jacket', 'Giacca di jeans': 'a denim jacket', Blazer: 'a blazer', Trench: 'a trench coat', Cappotto: 'a long wool coat',
   Piumino: 'a puffer jacket', Impermeabile: 'a rain jacket', Sneakers: 'sneakers', 'Scarpe da corsa': 'running shoes', Mocassini: 'loafers',
-  'Scarpe eleganti': 'oxford dress shoes', Stivaletti: 'chelsea boots', Sandali: 'sandals', 'Décolleté': 'high heel pumps',
+  'Scarpe eleganti': 'oxford dress shoes', Stivaletti: 'chelsea boots', Polacchini: 'suede desert boots', Sandali: 'sandals', 'Décolleté': 'high heel pumps',
   Cintura: 'a belt', Borsa: 'a handbag', Sciarpa: 'a scarf', Cappello: 'a hat', Cravatta: 'a necktie',
 };
 
@@ -235,7 +235,7 @@ async function showNewMannequin(category, name, ref, pose) {
     pose ? h('div', { class: 'refphoto' },
       h('img', { src: poseURL, alt: `Posa ${pose.label}` }),
       h('p', { class: 'hint' }, 'Parte anche questa immagine, così copia la posa.', ' ', h('a', { href: poseURL, download: `posa-${pose.base}.jpg` }, 'Salva la posa'))) : null,
-    pose ? null : h('p', {}, mannequinMatch(category, name)?.same
+    pose ? null : h('p', {}, mannequinMatch(category, name, undefined, ref?.id)?.same
       ? `Crea con ChatGPT o Gemini un manichino con ${articolo(name)} e caricalo qui: l'app lo prepara da sola e per questo capo userà il tuo al posto di quello dell'app.`
       : `I manichini ${currentGender()} non hanno ${articolo(name)}. Puoi crearne uno con ChatGPT o Gemini e caricarlo qui: l'app lo prepara da sola.`),
     file ? h('div', { class: 'refphoto' },
@@ -260,7 +260,7 @@ async function showNewMannequin(category, name, ref, pose) {
           try { await navigator.clipboard.writeText(prompt); toast('Testo copiato'); } catch { toast('Tieni premuto sul testo per copiarlo'); }
         },
       }, 'Copia il testo'),
-      h('button', { type: 'button', class: 'btn primary', onclick: () => { close(); openMannequinEditor({ category, name, pose }); } }, 'Carica il manichino'))));
+      h('button', { type: 'button', class: 'btn primary', onclick: () => { close(); openMannequinEditor({ category, name, pose, ref }); } }, 'Carica il manichino'))));
 }
 
 // ---------- manichino creato da te ----------
@@ -272,7 +272,7 @@ const TRY_BASE = { 1: 'blu navy', 2: 'bianco', 3: 'denim', 4: 'bianco' };
 const TRY_COLORS = ['bordeaux', 'blu navy', 'grigio', 'verde oliva', 'beige', 'nero'];
 const MIN_ZONE = 1500; // pixel sotto i quali una zona non c'è
 
-function openMannequinEditor({ category, name, onSaved, pose } = {}) {
+function openMannequinEditor({ category, name, onSaved, pose, ref } = {}) {
   openDialog((close) => {
     const wrap = h('div', { class: 'sheet' });
     const fileIn = h('input', { type: 'file', accept: 'image/*', hidden: true });
@@ -284,7 +284,7 @@ function openMannequinEditor({ category, name, onSaved, pose } = {}) {
       h('p', {}, 'Carica l\'immagine del manichino fatta con ChatGPT o Gemini, con i capi a colori pieni: giacca rossa, maglia verde, pantaloni blu, scarpe gialle.'),
       category ? h('p', { class: 'hint' }, `${articolo(name)[0].toUpperCase()}${articolo(name).slice(1)} va in ${ZONE_COLOR[category] || 'ROSSO puro'}.${pose ? ` Posa: ${pose.label}.` : ''}`) : null,
       h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn primary', onclick: pick }, 'Scegli l\'immagine'),
-        category ? h('button', { type: 'button', class: 'btn', onclick: () => { close(); showNewMannequin(category, name, null, pose); } }, 'Testo per crearlo') : null),
+        category ? h('button', { type: 'button', class: 'btn', onclick: () => { close(); showNewMannequin(category, name, ref, pose); } }, 'Testo per crearlo') : null),
     );
 
     fileIn.addEventListener('change', async () => {
@@ -396,7 +396,9 @@ function openMannequinEditor({ category, name, onSaved, pose } = {}) {
         for (const z of zones) garments[z] = selects[z].value;
         const m = {
           id: db.newId(), name: nameIn.value.trim() || autoName(), gender: gender.value(), occasions: occ,
-          garments, main: presetZone && garments[presetZone] ? garments[presetZone] : null, pose: pose?.base || null, base: prepared.base, zone: prepared.zone, createdAt: new Date().toISOString(),
+          garments, main: presetZone && garments[presetZone] ? garments[presetZone] : null, pose: pose?.base || null,
+          // Fatto dalla scheda di un capo: vale solo per quel capo, non per tutti quelli dello stesso tipo.
+          itemId: presetZone && garments[presetZone] && ref?.id ? ref.id : null, base: prepared.base, zone: prepared.zone, createdAt: new Date().toISOString(),
         };
         try {
           await saveCustom(m);
@@ -521,7 +523,9 @@ function posesBox(category, name, ref) {
   if (!z) return null;
   const poses = posesFor(g, category, name);
   if (!poses.length) return null;
-  const done = (p) => CUSTOM.some((c) => c.gender === g && c.garments?.[z] === name && c.pose === p.base);
+  const id = ref?.()?.id;
+  const done = (p) => CUSTOM.some((c) => c.gender === g && c.pose === p.base
+    && (ownerItem(c) ? ownerItem(c) === id : c.garments?.[z] === name));
   const n = poses.filter(done).length;
   return h('details', { class: 'poses' },
     h('summary', {}, `${articolo(name)[0].toUpperCase()}${articolo(name).slice(1)} anche su altre pose (${n}/${poses.length})`),
@@ -531,6 +535,39 @@ function posesBox(category, name, ref) {
       h('small', {}, p.label),
       done(p) ? h('span', { class: 'pose-ok' }, '✓ Fatto')
         : h('button', { type: 'button', class: 'btn small', onclick: () => showNewMannequin(category, name, ref?.(), p) }, 'Crea')))));
+}
+
+// I tuoi manichini dello stesso tipo fatti per altri capi: se uno in realtà è di questo capo
+// (es. collegato male a un altro dei due mocassini), con un tocco passa a questo.
+function otherItemsMannequins(category, name, item, colorsNow) {
+  const g = currentGender();
+  const z = zoneOfCategory(category);
+  const list = CUSTOM.filter((c) => c.gender === g && ownerItem(c) && ownerItem(c) !== item.id && c.garments?.[z] === name);
+  if (!z || !list.length) return null;
+  const main = PALETTE[String(colorsNow() || '').split(',')[0].trim()] || [150, 150, 150];
+  const neutral = [212, 210, 205];
+  return h('details', { class: 'poses' },
+    h('summary', {}, `${list.length === 1 ? 'Un tuo manichino' : `${list.length} tuoi manichini`} di ${name.toLowerCase()} ${list.length === 1 ? 'è' : 'sono'} di altri capi`),
+    h('p', { class: 'hint' }, 'Ogni capo ha il suo manichino. Se uno di questi in realtà è di questo capo, toccalo e passa a questo.'),
+    h('div', { class: 'pose-grid' }, list.map((c) => {
+      const canvas = h('canvas', { class: 'pose-canvas', 'aria-label': c.name });
+      const paint = {};
+      for (const k of [1, 2, 3, 4]) paint[k] = k === z ? main : neutral;
+      previewPhoto(canvas, c.base, c.zone, paint).catch(() => {});
+      return h('div', { class: 'pose' }, canvas, h('small', {}, c.name),
+        h('button', {
+          type: 'button', class: 'btn small',
+          onclick: async () => {
+            try {
+              const all = CUSTOM.filter((x) => !x.shared && !x.fixed);
+              const mine = all.find((x) => x.id === c.id);
+              await saveCustom({ ...mine, itemId: item.id, garments: { ...mine.garments }, main: mine.main || name });
+              toast('Manichino passato a questo capo');
+              window.dispatchEvent(new Event('manichini'));
+            } catch (e) { console.warn('manichino', e); toast('Non sono riuscito a spostarlo.'); }
+          },
+        }, 'È di questo capo'));
+    })));
 }
 
 function newMannequinButton(category, name, label = 'Come creare il manichino', ref) {
@@ -555,7 +592,7 @@ function labDistance(a, b) {
 // "la felpa", "il blazer", "i jeans"... per le frasi dell'app.
 function articolo(name) {
   const n = name.toLowerCase();
-  if (/^(jeans|chino|pantaloni|leggings|bermuda|cargo|sandali|mocassini|stivaletti|décolleté)/.test(n)) return `i ${n}`;
+  if (/^(jeans|chino|pantaloni|leggings|bermuda|cargo|sandali|mocassini|stivaletti|polacchini|décolleté)/.test(n)) return `i ${n}`;
   if (/^(scarpe)/.test(n)) return `le ${n}`;
   if (/^(sneakers)/.test(n)) return `le ${n}`;
   if (/^[aeiou]/.test(n)) return `l'${n}`;
@@ -614,7 +651,7 @@ function colorDots(it) {
 }
 
 function wardrobeTile(it) {
-  const m = mannequinMatch(it.category, it.subcategory);
+  const m = mannequinMatch(it.category, it.subcategory, undefined, it.id);
   return h('button', { class: 'tile', type: 'button', onclick: () => editItem(it) },
     h('img', { src: imgURL(it), alt: describeItem(it), loading: 'lazy', class: it.cutout ? 'cut' : null }),
     m?.same === false ? h('span', { class: 'tile-warn', title: 'Non c\'è sui manichini' }, '⚠') : null,
@@ -622,7 +659,7 @@ function wardrobeTile(it) {
 }
 
 function wardrobeRow(it) {
-  const m = mannequinMatch(it.category, it.subcategory);
+  const m = mannequinMatch(it.category, it.subcategory, undefined, it.id);
   const status = !m ? h('span', { class: 'st muted' }, 'Tipo libero')
     : m.same ? h('span', { class: 'st ok' }, '✓ Manichino')
       : h('span', { class: 'st warn' }, m.garment ? `⚠ Come ${m.garment}` : '⚠ Non sul manichino');
@@ -647,7 +684,7 @@ async function renderWardrobe() {
     view.append(await starterWardrobe());
   } else {
     // Barra in alto: quanti capi, avviso manichini (compatto) e scelta del layout.
-    const missing = items.filter((it) => mannequinMatch(it.category, it.subcategory)?.same === false);
+    const missing = items.filter((it) => mannequinMatch(it.category, it.subcategory, undefined, it.id)?.same === false);
     const kinds = [...new Map(missing.map((it) => [`${it.category}|${it.subcategory}`, it])).values()];
     const switcher = h('div', { class: 'seg', role: 'group', 'aria-label': 'Layout' },
       Object.entries(LAYOUTS).map(([k, label]) => h('button', {
@@ -808,13 +845,13 @@ function editItem(item, { isNew = false } = {}) {
     // Capo corrispondente sui manichini, aggiornato a ogni cambio di categoria o tipo.
     // Il capo com'è adesso nella scheda: per il testo del manichino fedele.
     const capoVero = () => ({
-      image: item.image, cutout: item.cutout, material: f.material.value.trim(), pattern: f.pattern.value,
+      id: item.id, image: item.image, cutout: item.cutout, material: f.material.value.trim(), pattern: f.pattern.value,
       colors: f.colors.value.split(',').map((x) => x.trim()).filter(Boolean),
     });
     const paintMatch = () => {
       const name = f.subcategory.value.trim();
       if (!category || !name) { matchSlot.replaceChildren(); paintMannequin(); return; }
-      const m = mannequinMatch(category, name);
+      const m = mannequinMatch(category, name, undefined, item.id);
       const who = currentGender() === 'donna' ? 'manichini donna' : 'manichini uomo';
       let box;
       if (!m) {
@@ -825,17 +862,21 @@ function editItem(item, { isNew = false } = {}) {
         const notMine = mine?.shared || mine?.fixed;
         box = h('div', { class: 'match ok' }, h('strong', {}, `✓ Sul ${notMine ? '' : 'tuo '}manichino${mine ? ` "${mine.name}"` : ''}`),
           notMine ? `È uno dei manichini ${mine.fixed ? 'dell\'app' : 'per tutti'}. Se qualcosa non torna puoi farne uno tuo: prende il suo posto.`
-            : 'Se qualcosa non torna puoi rifarlo: quello nuovo prende il suo posto.',
+            : ownerItem(mine) === item.id ? `È fatto apposta per questo capo: gli altri ${name.toLowerCase()} hanno ognuno il suo. Se qualcosa non torna puoi rifarlo.`
+              : 'Se qualcosa non torna puoi rifarlo: quello nuovo prende il suo posto.',
           newMannequinButton(category, name, notMine ? 'Crea un manichino tuo' : 'Rifai il manichino', capoVero),
-          posesBox(category, name, capoVero));
+          posesBox(category, name, capoVero),
+          otherItemsMannequins(category, name, item, () => f.colors.value));
       } else if (m.same) {
         box = h('div', { class: 'match ok' }, h('strong', {}, `✓ Sui manichini: ${m.garment}`),
           `I ${who} hanno lo stesso capo, l'anteprima lo mostra col suo colore. Se sul manichino non viene bene, puoi crearne uno tuo per questo capo.`,
-          newMannequinButton(category, name, 'Crea un manichino per questo capo', capoVero));
+          newMannequinButton(category, name, 'Crea un manichino per questo capo', capoVero),
+          otherItemsMannequins(category, name, item, () => f.colors.value));
       } else {
         box = h('div', { class: 'match warn' }, h('strong', {}, `⚠ Serve un nuovo manichino: i ${who} non hanno ${articolo(name)}`),
           m.garment ? `Per ora nell'anteprima appare come il capo più simile: ${m.garment}.` : 'Per ora nell\'anteprima non compare.',
-          newMannequinButton(category, name, undefined, capoVero));
+          newMannequinButton(category, name, undefined, capoVero),
+          otherItemsMannequins(category, name, item, () => f.colors.value));
       }
       // Fantasie che il manichino non sa ridisegnare.
       const pat = f.pattern.value;
@@ -857,7 +898,7 @@ function editItem(item, { isNew = false } = {}) {
       const key = [category, name, colors.join(','), f.pattern.value, currentGender()].join('|');
       if (key === lastLook) return;
       lastLook = key;
-      const g = category && name ? garmentView(category, name, colors, f.pattern.value) : null;
+      const g = category && name ? garmentView(category, name, colors, f.pattern.value, item.id) : null;
       if (!g) {
         mannequinSlot.replaceChildren(h('div', { class: 'pair-empty' },
           category && name ? 'Questo capo non compare sui manichini' : 'Scegli il tipo per vederlo sul manichino'));
