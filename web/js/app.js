@@ -1,6 +1,6 @@
 import * as db from './db.js';
 import { getWeather, getForecast, savedCity, setCity, forgetCity } from './weather.js';
-import { detectColors } from './colors.js';
+import { detectColors, sameShade } from './colors.js';
 import { suggestOutfits, ideaName, ideaItem, ideaFromId, DRESS_CODES, readInvite } from './stylist.js';
 import { lookView, garmentView, previewPhoto, forgetPhoto, posesFor } from './look.js';
 import { prepareMannequin, loadCustom, saveCustom, removeCustom, syncShared, isAdmin, publishShared, unpublishShared, makeDefinitive, fixedCount } from './manichini.js';
@@ -11,6 +11,9 @@ import {
   CATEGORIES, SEASONS, STYLES, PATTERNS, MOODS, OCCASIONS, FORMALITY, SUBTYPES, PALETTE, describeItem,
   mannequinMatch, currentGender, CUSTOM, ZONE_CATEGORIES, zoneOfCategory,
 } from './catalog.js';
+
+// Colori senza tinta: tra questi conta solo la luminosità.
+const NO_HUE = new Set(['nero', 'grigio', 'grigio chiaro', 'bianco']);
 
 const APP_VERSION = '66'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
@@ -912,7 +915,11 @@ function editItem(item, { isNew = false } = {}) {
         // dalla foto solo se è davvero diverso (non un'ombra dello stesso colore).
         if (hues[0]?.p >= 0.5 && colorsAuto) {
           await colorsDone;
-          const main = hues[0].name;
+          // Se il modello è incerto tra due sfumature vicine (ocra o marrone, rosso o bordeaux…)
+          // vale il colore misurato sui pixel, che ora tiene conto di luce e ombre.
+          const pixelMain = f.colors.value.split(',')[0]?.trim();
+          const main = hues[0].p < 0.7 && PALETTE[pixelMain] && sameShade(pixelMain, hues[0].name)
+            && !NO_HUE.has(pixelMain) && !NO_HUE.has(hues[0].name) ? pixelMain : hues[0].name;
           const far = (a, b) => labDistance(PALETTE[a], PALETTE[b]) > 35;
           const extra = f.colors.value.split(',').map((x) => x.trim()).filter((c) => PALETTE[c] && far(c, main));
           f.colors.value = [main, ...extra].slice(0, 2).join(', ');
