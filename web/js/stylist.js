@@ -153,16 +153,26 @@ function ideaItems(gender) {
     for (const sub of SUBTYPES[cat]) {
       if (gender !== 'donna' && WOMEN_ONLY.has(sub.name)) continue;
       if (cat === 'dress' && sub.name === 'Tuta') continue;
-      for (const c of IDEA_COLOR_BY_TYPE[sub.name] || IDEA_COLORS[cat]) {
-        out.push({
-          id: `idea:${cat}:${sub.name}:${c}`, idea: true, category: cat, subcategory: sub.name,
-          colors: [c], formality: sub.formality, seasons: sub.seasons, styles: sub.styles, pattern: 'solid',
-          timesWorn: 1,
-        });
-      }
+      for (const c of IDEA_COLOR_BY_TYPE[sub.name] || IDEA_COLORS[cat]) out.push(ideaItem(cat, sub.name, c));
     }
   }
   return out;
+}
+
+// Un capo "da prendere" (anche fuori dalla lista delle idee): serve con l'armadio vuoto.
+export function ideaItem(category, subcategory, color) {
+  const sub = findSubtype(category, subcategory) || {};
+  return {
+    id: `idea:${category}:${subcategory}:${color}`, idea: true, category, subcategory,
+    colors: [color], formality: sub.formality, seasons: sub.seasons, styles: sub.styles, pattern: 'solid',
+    timesWorn: 1,
+  };
+}
+
+// Gli outfit salvati tengono gli id dei capi da prendere: da qui si ricostruisce il capo.
+export function ideaFromId(id) {
+  const m = /^idea:([^:]+):([^:]+):(.+)$/.exec(String(id || ''));
+  return m ? ideaItem(m[1], m[2], m[3]) : null;
 }
 
 // Nome dell'idea in italiano corretto: "camicia bianca", "pantaloni neri".

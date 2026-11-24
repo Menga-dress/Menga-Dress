@@ -454,3 +454,8 @@ dialog.setup-dlg { width: min(560px, calc(100vw - 16px)); }
 .wear-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin: 6px 0 10px; }
 .wear-row .stat { margin: 0; flex: 1 1 160px; }
 .btn.primary.wear-today.on { background: var(--accent-soft); color: var(--ink); border-color: var(--accent); }
+
+/* Armadio vuoto: capi base da cercare online. */
+.empty.compact { padding: 20px 12px 12px; }
+.outfit .piece-link { text-decoration: none; color: inherit; }
+.outfit .piece-link figcaption { color: var(--accent); }
