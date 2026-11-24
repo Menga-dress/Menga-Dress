@@ -1,5 +1,5 @@
 // Rende l'app installabile e utilizzabile anche offline (le chiamate AI e meteo richiedono la rete).
-const CACHE = 'dress-v66';
+const CACHE = 'dress-v67';
 
 // Modello per riconoscere i capi (circa 23 MB): scaricato solo quando serve e tenuto anche
 // dopo gli aggiornamenti dell'app. Se cambia il modello, cambiare questo nome.
@@ -82,7 +82,8 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== self.location.origin) return;
-  if (/\/(modello|vendor)\//.test(url.pathname)) {
+  // testi.json (nomi di tipi e colori) è piccolo e cambia quando si aggiungono colori: segue l'app.
+  if (/\/(modello|vendor)\//.test(url.pathname) && !url.pathname.endsWith('/testi.json')) {
     e.respondWith(caches.open(MODEL_CACHE).then((c) => c.match(e.request.url).then((hit) => hit || fetch(e.request.url)
       .then((res) => { if (res.ok) c.put(e.request.url, res.clone()); return res; }))));
     return;

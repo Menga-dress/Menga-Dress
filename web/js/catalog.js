@@ -156,6 +156,8 @@ export const PALETTE = {
   rosa: [235, 160, 180],
   arancione: [235, 125, 40],
   giallo: [240, 205, 60],
+  senape: [205, 165, 45],
+  ocra: [180, 135, 55],
   viola: [110, 60, 140],
 };
 

@@ -32,6 +32,7 @@ const COLORS = {
   beige: ['beige', 'cream'], marrone: ['brown'], blu: ['royal blue', 'blue'], 'blu navy': ['navy blue'],
   azzurro: ['light blue', 'sky blue'], denim: ['denim blue'], verde: ['green'], 'verde oliva': ['olive green', 'khaki green'],
   rosso: ['red'], bordeaux: ['burgundy', 'maroon'], rosa: ['pink'], arancione: ['orange'], giallo: ['yellow'], viola: ['purple'],
+  senape: ['mustard yellow', 'mustard'], ocra: ['ochre', 'ochre yellow', 'dark mustard brown'],
 };
 const COLOR_TEMPLATES = ['a photo of {} clothing.', 'a {} garment.', 'a pair of {} shoes.', 'a {} shirt.', 'a pair of {} trousers.', 'a {} jacket.', 'a {} sweater.'];
 
