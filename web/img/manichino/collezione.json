@@ -116,5 +116,39 @@
   "main": "Stivaletti",
   "pose": null,
   "createdAt": "2026-11-22T14:32:58.479Z"
+ },
+ {
+  "id": "aa1b8db2-340f-4135-b2d8-d43f94445232",
+  "name": "Sneakers e cargo",
+  "gender": "uomo",
+  "occasions": [
+   "tempo_libero"
+  ],
+  "garments": {
+   "1": "Tuta",
+   "2": null,
+   "3": "Cargo",
+   "4": "Sneakers"
+  },
+  "main": "Sneakers",
+  "pose": "felpa",
+  "createdAt": "2026-11-24T21:16:19.088Z"
+ },
+ {
+  "id": "b0f6be63-101f-43b3-9923-9b066614aa71",
+  "name": "Impermeabile e cargo",
+  "gender": "uomo",
+  "occasions": [
+   "tempo_libero"
+  ],
+  "garments": {
+   "1": "Impermeabile",
+   "2": "Camicia",
+   "3": "Cargo",
+   "4": "Sneakers"
+  },
+  "main": "Impermeabile",
+  "pose": "casual",
+  "createdAt": "2026-11-24T21:13:52.921Z"
  }
 ]
