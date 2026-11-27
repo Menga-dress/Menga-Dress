@@ -16,7 +16,7 @@ import {
 // Colori senza tinta: tra questi conta solo la luminosità.
 const NO_HUE = new Set(['nero', 'grigio', 'grigio chiaro', 'bianco']);
 
-const APP_VERSION = '69'; // da aumentare a ogni modifica, si vede nelle Impostazioni
+const APP_VERSION = '70'; // da aumentare a ogni modifica, si vede nelle Impostazioni
 const view = document.getElementById('view');
 const titleEl = document.getElementById('view-title');
 
@@ -478,8 +478,8 @@ function mannequinSection() {
         if (!c.definitivo) {
           const fix = h('button', { type: 'button', class: 'linkbtn' }, 'Rendi definitivo');
           fix.addEventListener('click', () => {
-            if (!confirm(`Rendere definitivo "${c.name}"?\n\nEntra nella collezione fissa dell'app per tutti, come i manichini di partenza, ed esce dai tuoi e da quelli pubblicati. Ci vuole circa un'ora.`)) return;
-            busy(fix, () => makeDefinitive(c), 'Fatto: entro un\'ora circa sarà un manichino dell\'app');
+            if (!confirm(`Rendere definitivo "${c.name}"?\n\nEntra nella collezione fissa dell'app per tutti, come i manichini di partenza, ed esce dai tuoi e da quelli pubblicati. Vale da subito; la copia nel codice dell'app la fa GitHub da solo nelle ore successive.`)) return;
+            busy(fix, () => makeDefinitive(c), 'Fatto: ora è un manichino dell\'app');
           });
           actions.push(fix);
         }
