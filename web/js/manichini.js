@@ -21,6 +21,8 @@ const SHARED = 'manichini-pubblici';
 // (web/img/manichino/collezione.json + immagini in web/img/manichino/collezione/), li mette lì
 // da sola l'azione GitHub "Manichini definitivi" (.github/workflows/definitivi.yml).
 const FIXED = [];
+// Quelli segnati "definitivo" che l'azione GitHub non ha ancora copiato (vedi refresh).
+let PENDING = [];
 const fixedIds = () => new Set(FIXED.map((m) => m.id));
 
 async function loadFixed() {
@@ -39,7 +41,9 @@ async function loadFixed() {
 
 // Quanti manichini fissi ha l'app per uomo e per donna (gli 11 + 8 di partenza più quelli resi definitivi).
 export function fixedCount(gender) {
-  return (gender === 'donna' ? 8 : 11) + FIXED.filter((m) => m.gender === gender).length;
+  const fixed = fixedIds();
+  return (gender === 'donna' ? 8 : 11) + FIXED.filter((m) => m.gender === gender).length
+    + PENDING.filter((m) => m.gender === gender && !fixed.has(m.id)).length;
 }
 
 async function refresh() {
@@ -53,10 +57,18 @@ async function refresh() {
     try { await db.setKV(KEY, mine); } catch { /* niente */ }
   }
   shared = shared.filter((m) => !fixed.has(m.id));
-  const ids = new Set(mine.map((m) => m.id));
+  // Segnati "definitivo" ma non ancora copiati nel codice dall'azione GitHub (che può metterci
+  // ore: GitHub fa partire le azioni programmate quando vuole). Valgono già da subito come
+  // manichini dell'app, per tutti: le immagini sono nel catalogo. Il tuo originale resta salvato
+  // sul telefono finché non arriva nella collezione, poi si toglie come sopra.
+  const pending = new Map();
+  for (const m of [...mine, ...shared]) if (m.definitivo && !pending.has(m.id)) pending.set(m.id, { ...m, fixed: true, pending: true });
+  PENDING = [...pending.values()];
+  const live = mine.filter((m) => !pending.has(m.id));
+  const ids = new Set([...live.map((m) => m.id), ...pending.keys()]);
   const sharedOk = shared.filter((m) => !ids.has(m.id));
   for (const m of sharedOk) ids.add(m.id);
-  setCustomMannequins([...mine, ...sharedOk.map((m) => ({ ...m, shared: true })), ...FIXED.filter((m) => !ids.has(m.id))]);
+  setCustomMannequins([...live, ...sharedOk.map((m) => ({ ...m, shared: true })), ...PENDING, ...FIXED.filter((m) => !ids.has(m.id))]);
   return mine;
 }
 
@@ -200,7 +212,8 @@ export async function publishShared(m, extra = {}) {
   await refresh();
 }
 
-// Rende definitivo un tuo manichino: lo pubblica segnato "definitivo"; entro un'ora circa
+// Rende definitivo un tuo manichino: lo pubblica segnato "definitivo" (da subito vale come
+// manichino dell'app, vedi refresh); nelle ore successive
 // l'azione GitHub lo copia nel codice dell'app e poi l'app lo toglie dai tuoi e dal catalogo.
 export function makeDefinitive(m) {
   return publishShared(m, { definitivo: true });
