@@ -150,5 +150,39 @@
   "main": "Impermeabile",
   "pose": "casual",
   "createdAt": "2026-11-24T21:13:52.921Z"
+ },
+ {
+  "id": "bbb014ad-1876-49e4-9c86-368184d7ee6b",
+  "name": "Felpa e pantaloni sportivi",
+  "gender": "uomo",
+  "occasions": [
+   "tempo_libero"
+  ],
+  "garments": {
+   "1": null,
+   "2": "Felpa",
+   "3": "Pantaloni sportivi",
+   "4": "Sneakers"
+  },
+  "main": "Felpa",
+  "pose": null,
+  "createdAt": "2026-11-27T22:49:53.359Z"
+ },
+ {
+  "id": "96139bce-873c-45bd-b8f0-88062b41efaf",
+  "name": "Polacchini e pantaloni eleganti",
+  "gender": "uomo",
+  "occasions": [
+   "tempo_libero"
+  ],
+  "garments": {
+   "1": "Giubbotto",
+   "2": "Maglia sportiva",
+   "3": "Pantaloni eleganti",
+   "4": "Polacchini"
+  },
+  "main": "Polacchini",
+  "pose": null,
+  "createdAt": "2026-11-27T22:51:28.506Z"
  }
 ]
